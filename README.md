@@ -42,7 +42,7 @@ While originally designed to supercharge Chrome's native Side-by-Side "Split Vie
 1. Install a userscript manager like [Tampermonkey](https://www.tampermonkey.net) or Violentmonkey.
 2. Create a new script and copy/paste the code from `enhanced-split-view-for-chrome.user.js` in this repository.
 3. Save the script.
-*Click [here](https://github.com/neoxush/chrome-enhancedsplitview/raw/refs/heads/main/enhanced-split-view-for-chrome.user.js) to install userscript if you had aything
+*Click [here](https://github.com/neoxush/chrome-enhancedsplitview/raw/refs/heads/main/enhanced-split-view-for-chrome.user.js) to install userscript if you already had everything
 
 ## Usage Guide
 ### 1. Set Up Your View
