@@ -6,6 +6,16 @@ While originally designed to supercharge Chrome's native Side-by-Side "Split Vie
 
 ## Changelogs
 
+### v1.0.4
+- **Media Management**: Added media controls for source tabs with mute/unmute functionality
+- **Keyboard Shortcut**: Added Ctrl+Alt+M to toggle mute state on source tabs
+- **Visual Feedback**: Source tab indicator turns red when muted
+- **Configuration**: Added `muteOnDisconnect` option to automatically mute media when disconnecting
+- **Bug Fixes**: Improved state management and cleanup of media elements
+- **State Persistence**: Enhanced tab state persistence using GM_saveTab API
+- **Drag & Drop**: Improved accuracy with cross-tab bidding system
+- **UI Improvements**: Better visual feedback and error handling
+
 ### v1.0.3
 - **Improved Drag-and-Drop Accuracy**: Implemented a cross-tab bidding system to prevent overlapping windows from both claiming a role.
 - **Focus-Aware Bidding**: Tabs now track interaction (clicks/focus) to ensure the "top-most" window wins the role assignment.
@@ -29,11 +39,12 @@ While originally designed to supercharge Chrome's native Side-by-Side "Split Vie
 3. **Easy Pairing (Drag & Drop)**: Once you have a Source, click and hold the "S" icon, drag it, and release. The script will automatically pair with the other currently visible tab (the **TARGET**).
 4. **Link Syncing**: Any link clicked in the Source tab automatically opens in the Target tab.
 5. **Visual Interface**: Floating "S" (Source) and "T" (Target) indicators with context menus for control.
-6. **Hotkey Customization**: Fully configurable mouse shortcuts via the visual configuration panel.
-7. **Flexible Layouts**: Works with Chrome's native Split View, two separate windows, or dual monitors.
-8. **Group Management**: Multiple Source tabs can be grouped together, with Targets joining existing groups.
-9. **State Persistence**: Tab roles and connections survive page refreshes and navigation changes.
-10. **Context Menu Controls**: Right-click on S/T indicators for options like Revoke, Disconnect, and Join as Source.
+6. **Media Controls**: Mute/unmute media in source tabs with Ctrl+Alt+M or via the UI.
+7. **Hotkey Customization**: Fully configurable mouse shortcuts via the visual configuration panel.
+8. **Flexible Layouts**: Works with Chrome's native Split View, two separate windows, or dual monitors.
+9. **Group Management**: Multiple Source tabs can be grouped together, with Targets joining existing groups.
+10. **State Persistence**: Tab roles and connections survive page refreshes and navigation changes.
+11. **Context Menu Controls**: Right-click on S/T indicators for options like Revoke, Disconnect, and Join as Source.
 
 ## How it Works
 ![chrome_split_view_preview](https://github.com/user-attachments/assets/cb101a97-e580-412f-9844-1cb3befa3e3b)

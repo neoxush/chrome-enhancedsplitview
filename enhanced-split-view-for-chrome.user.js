@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhanced Split View for Chrome
 // @namespace    http://tampermonkey.net/
-// @version      1.0.3
+// @version      1.0.4
 // @description  This scripts adds extra control over Chrome's native split view function, which allows to pin a source tab to open new content on the side.
 // @author       https://github.com/neoxush/VibeCoding/tree/master/browser-extensions/enhanced-split-view
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=google.com
@@ -16,6 +16,7 @@
 // @grant        GM_saveTab
 // @grant        GM_listValues
 // @grant        GM_deleteValue
+// @grant        GM_notification
 // ==/UserScript==
 
 (function () {
@@ -29,6 +30,7 @@
     const KEY_DRAG_PAIR_REQUEST = `${GM_PREFIX}drag_pair_request`;
     const KEY_DRAG_SOURCE_REQUEST = `${GM_PREFIX}drag_source_request`;
     const KEY_CONFIG = `${GM_PREFIX}config`;
+    const KEY_GLOBAL_RESET = `${GM_PREFIX}global_reset`;
     const PAIR_MAX_AGE_MS = 5000;
     const getTargetUrlKey = (id) => `${GM_PREFIX}url_${id}`;
     const getTimestampKey = (id) => `${GM_PREFIX}ts_${id}`;
@@ -44,16 +46,11 @@
     // --- State Management ---
     const generateId = () => Math.random().toString(36).substring(2, 11);
     const myInstanceId = generateId();
-    let lastFocusTime = 0; // Initialize to 0 so fresh tabs don't tie with Date.now()
-    const updateFocus = () => { lastFocusTime = Date.now(); };
-    window.addEventListener('focus', updateFocus);
-    window.addEventListener('mousedown', updateFocus, true);
-    window.addEventListener('pointerdown', updateFocus, true);
-
     let myRole = 'idle';
     let myId = null;
     let myLastTs = 0;
     let mySourceTabId = null; // Unique ID for this source tab instance
+    let myIsMuted = false;
     let stateLoaded = false;
     let ui = null;
     let configPanel = null;
@@ -69,6 +66,7 @@
                 myId = parsed.stmId;
                 myLastTs = parsed.stmLastTs || 0;
                 mySourceTabId = parsed.stmSourceTabId;
+                myIsMuted = parsed.stmIsMuted || false;
                 updateUI();
                 attachRoleSpecificListeners();
             }
@@ -84,20 +82,37 @@
         GM_setValue(KEY_CONFIG, config);
     }
 
-    function saveState(role, id, lastTs = 0, sourceTabId = null) {
+    function saveState(role, id, lastTs = 0, sourceTabId = null, isMuted = null) {
         myRole = role; myId = id; myLastTs = lastTs; mySourceTabId = sourceTabId;
+
+        // If we are becoming idle, we must unmute. 
+        // Otherwise, we only update mute state if explicitly provided.
+        if (myRole === 'idle') {
+            myIsMuted = false;
+        } else if (isMuted !== null) {
+            myIsMuted = isMuted;
+        }
+
+        // Apply mute state to all tracked media elements
+        if (mediaManager && mediaManager.elements) {
+            mediaManager.elements.forEach(el => {
+                el.muted = myIsMuted;
+            });
+        }
+
         // Simplified Logic: Save directly to the Tab Object
         // GM_saveTab persists even across domain changes in the same tab.
         GM_saveTab({
-            role: role,
-            id: id,
-            lastTs: lastTs,
-            sourceTabId: sourceTabId
+            role: myRole,
+            id: myId,
+            lastTs: myLastTs,
+            sourceTabId: mySourceTabId,
+            isMuted: myIsMuted
         });
 
         // Secondary fallback persistence using window.name to survive edge cases.
         try {
-            const payload = { stmRole: role, stmId: id, stmLastTs: lastTs, stmSourceTabId: sourceTabId };
+            const payload = { stmRole: myRole, stmId: myId, stmLastTs: myLastTs, stmSourceTabId: mySourceTabId, stmIsMuted: myIsMuted };
             window.name = JSON.stringify(payload);
             sessionStorage.setItem('stm_state', JSON.stringify(payload));
         } catch (err) { /* ignore */ }
@@ -110,27 +125,45 @@
         // Direct retrieval from the Tab Object
         return new Promise((resolve) => {
             GM_getTab((tab) => {
-                if (tab && tab.role && tab.id) {
-                    resolve({ role: tab.role, id: tab.id, lastTs: tab.lastTs || 0, sourceTabId: tab.sourceTabId });
+                if (tab && tab.role) {
+                    resolve({
+                        role: tab.role,
+                        id: tab.id,
+                        lastTs: tab.lastTs || 0,
+                        sourceTabId: tab.sourceTabId,
+                        isMuted: tab.isMuted || false
+                    });
                     return;
                 }
                 // Fallback: attempt to parse window.name if it holds our state
                 try {
                     const parsed = JSON.parse(window.name || '{}');
-                    if (parsed.stmRole && parsed.stmId) {
-                        resolve({ role: parsed.stmRole, id: parsed.stmId, lastTs: parsed.stmLastTs || 0, sourceTabId: parsed.stmSourceTabId });
+                    if (parsed.stmRole) {
+                        resolve({
+                            role: parsed.stmRole,
+                            id: parsed.stmId,
+                            lastTs: parsed.stmLastTs || 0,
+                            sourceTabId: parsed.stmSourceTabId,
+                            isMuted: parsed.stmIsMuted || false
+                        });
                         return;
                     }
                 } catch (err) { /* ignore */ }
                 // Fallback: sessionStorage (survives same-tab navigations)
                 try {
                     const parsed = JSON.parse(sessionStorage.getItem('stm_state') || '{}');
-                    if (parsed.stmRole && parsed.stmId) {
-                        resolve({ role: parsed.stmRole, id: parsed.stmId, lastTs: parsed.stmLastTs || 0, sourceTabId: parsed.stmSourceTabId });
+                    if (parsed.stmRole) {
+                        resolve({
+                            role: parsed.stmRole,
+                            id: parsed.stmId,
+                            lastTs: parsed.stmLastTs || 0,
+                            sourceTabId: parsed.stmSourceTabId,
+                            isMuted: parsed.stmIsMuted || false
+                        });
                         return;
                     }
                 } catch (err) { /* ignore */ }
-                resolve({ role: 'idle', id: null, lastTs: 0, sourceTabId: null });
+                resolve({ role: 'idle', id: null, lastTs: 0, sourceTabId: null, isMuted: false });
             });
         });
     }
@@ -141,15 +174,20 @@
         GM_addStyle(`
             @keyframes stm-pulse { 0% {transform: scale(1);} 50% {transform: scale(1.2);} 100% {transform: scale(1);} }
             .stm-pulse-animate { animation: stm-pulse 0.5s ease-out; }
-            #stm-ui-container { position: fixed; top: 85px; z-index: 2147483647; user-select: none; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; }
-            #stm-ui-container.stm-side-right { right: 0; }
-            #stm-ui-container.stm-side-left { left: 0; }
-            #stm-status-dot { width: 100%; height: 100%; box-shadow: 0 2px 5px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; font-family: sans-serif; font-size: 14px; font-weight: bold; color: white; cursor: grab; transition: transform 0.2s, background-color 0.3s; border: 1px solid rgba(255,255,255,0.5); }
+            #stm-ui-container { position: fixed; top: 85px; z-index: 2147483647; user-select: none; display: flex; align-items: center; justify-content: center; gap: 5px; }
+            #stm-ui-container.stm-side-right { right: 0; flex-direction: row; }
+            #stm-ui-container.stm-side-left { left: 0; flex-direction: row-reverse; }
+            #stm-status-dot { width: 30px; height: 30px; box-shadow: 0 2px 5px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; font-family: sans-serif; font-size: 14px; font-weight: bold; color: white; cursor: grab; transition: transform 0.2s, background-color 0.3s; border: 1px solid rgba(255,255,255,0.5); }
             #stm-status-dot:active { cursor: grabbing; }
             #stm-ui-container.stm-side-right #stm-status-dot { background-color: #28a745; border-radius: 8px 0 0 8px; border-right: none; }
             #stm-ui-container.stm-side-left #stm-status-dot { background-color: #007bff; border-radius: 0 8px 8px 0; border-left: none; }
             #stm-ui-container.stm-side-right:hover #stm-status-dot { transform: translateX(-3px); }
             #stm-ui-container.stm-side-left:hover #stm-status-dot { transform: translateX(3px); }
+            #stm-status-dot.stm-drag-over { background-color: #ffc107 !important; transform: scale(1.2) !important; border-color: #fff; box-shadow: 0 0 15px #ffc107; }
+            #stm-status-dot.stm-global-drag-over { background-color: #17a2b8 !important; transform: scale(1.1); box-shadow: 0 0 10px #17a2b8; }
+            #stm-volume-btn { width: 28px; height: 28px; background: rgba(51, 51, 51, 0.9); border-radius: 50%; display: none; align-items: center; justify-content: center; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 2px 5px rgba(0,0,0,0.3); transition: transform 0.2s, background-color 0.2s; }
+            #stm-volume-btn:hover { transform: scale(1.1); background: #444; }
+            #stm-volume-btn svg { width: 16px; height: 16px; fill: #fff; }
             #stm-menu { display: none; position: absolute; top: 100%; background-color: #333; border-radius: 4px; width: 120px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-family: sans-serif; font-size: 12px; }
             #stm-ui-container.stm-side-right #stm-menu { right: 0; border-top-right-radius: 0; }
             #stm-ui-container.stm-side-left #stm-menu { left: 0; border-top-left-radius: 0; }
@@ -279,20 +317,28 @@
     }
 
     function resetAllRoles() {
-        const confirmed = window.confirm('Reset all Split Tab roles across tabs? This will clear Source/Target links. Continue?');
-        if (!confirmed) return;
         const keys = GM_listValues().filter(k => k.startsWith(GM_PREFIX));
         const ids = new Set();
         const urlPrefix = `${GM_PREFIX}url_`;
         const tsPrefix = `${GM_PREFIX}ts_`;
         const disconnectPrefix = `${GM_PREFIX}disconnect_`;
+        const sourcesPrefix = `${GM_PREFIX}sources_`;
         keys.forEach(k => {
             if (k.startsWith(urlPrefix)) ids.add(k.slice(urlPrefix.length));
             else if (k.startsWith(tsPrefix)) ids.add(k.slice(tsPrefix.length));
             else if (k.startsWith(disconnectPrefix)) ids.add(k.slice(disconnectPrefix.length));
+            else if (k.startsWith(sourcesPrefix)) ids.add(k.slice(sourcesPrefix.length));
         });
-        // Notify other tabs to drop their roles.
+
+        // Also check the latest source key
+        const latestSource = GM_getValue(KEY_LATEST_SOURCE, null);
+        if (latestSource && latestSource.sourceId) ids.add(latestSource.sourceId);
+
+        // Notify other tabs to drop their roles via specific IDs.
         ids.forEach(id => GM_setValue(getDisconnectKey(id), Date.now()));
+
+        // Broadcast a global reset signal as a fallback for tabs without discovered IDs.
+        GM_setValue(KEY_GLOBAL_RESET, Date.now());
         // Remove all role-related stored values while preserving configuration.
         keys.forEach(k => {
             if (k === KEY_CONFIG) return;
@@ -305,32 +351,82 @@
             sessionStorage.removeItem('stm_state');
         } catch (err) { /* ignore */ }
         saveState('idle', null, 0, null);
-        GM_notification({ text: 'All roles have been reset.' });
     }
 
     function updateUI() {
         if (window !== window.top) return; // Only show UI in the top-level window
         if (!document.body) { window.addEventListener('DOMContentLoaded', updateUI, { once: true }); return; }
+
+        // Hide UI in fullscreen mode
+        const isFullscreen = !!document.fullscreenElement;
+
         if (!ui) {
-            ui = { container: document.createElement('div'), dot: document.createElement('div'), menu: document.createElement('div') };
+            ui = {
+                container: document.createElement('div'),
+                dot: document.createElement('div'),
+                menu: document.createElement('div'),
+                volume: document.createElement('div')
+            };
             ui.container.id = 'stm-ui-container';
             ui.dot.id = 'stm-status-dot';
             ui.menu.id = 'stm-menu';
-            ui.container.append(ui.menu, ui.dot);
+            ui.volume.id = 'stm-volume-btn';
+            ui.container.append(ui.menu, ui.volume, ui.dot);
             document.body.appendChild(ui.container);
-            ui.dot.addEventListener('mousedown', handleDragStart);
+
+            // Native Drag & Click
+            ui.dot.setAttribute('draggable', 'true');
+            ui.dot.addEventListener('click', (e) => { if (e.button === 0) toggleMenu(); });
+            ui.dot.addEventListener('dragstart', handleRoleDragStart);
+
+            // Link Drop Support
+            ui.dot.addEventListener('dragover', handleLinkDragOver);
+            ui.dot.addEventListener('dragleave', handleLinkDragLeave);
+            ui.dot.addEventListener('drop', handleLinkDrop);
+
             ui.menu.addEventListener('click', handleMenuClick);
+            ui.volume.addEventListener('click', () => mediaManager.toggleMute());
             ui.container.addEventListener('mouseleave', handleContainerMouseLeave);
             window.addEventListener('click', (e) => { if (ui && ui.menu.style.display === 'block' && !ui.container.contains(e.target)) toggleMenu(); }, true);
+
+            // Global Drop Support (for pairing)
+            window.addEventListener('dragover', handleGlobalDragOver);
+            window.addEventListener('dragleave', handleGlobalDragLeave);
+            window.addEventListener('drop', handleGlobalDrop);
         }
-        ui.container.style.display = (myRole === 'idle') ? 'none' : 'flex';
+
+        const hasMedia = mediaManager && mediaManager.hasMedia;
+        // The UI container is ONLY shown if the tab has an active role (Source or Target) AND not in fullscreen.
+        ui.container.style.display = (myRole === 'idle' || isFullscreen) ? 'none' : 'flex';
         ui.container.classList.remove('stm-side-left', 'stm-side-right');
+
+        // Target is on the left, Source (and others) on the right.
+        const side = (myRole === 'target') ? 'left' : 'right';
+        ui.container.classList.add(`stm-side-${side}`);
+
         if (myRole === 'source') {
-            ui.container.classList.add('stm-side-right');
             ui.dot.textContent = 'S';
+            ui.dot.style.display = 'flex';
         } else if (myRole === 'target') {
-            ui.container.classList.add('stm-side-left');
             ui.dot.textContent = 'T';
+            ui.dot.style.display = 'flex';
+        } else {
+            // This block is mostly for safety if the container display logic changes.
+            ui.dot.style.display = 'none';
+            ui.dot.textContent = '';
+        }
+
+        // Update Volume Button
+        // Only show the volume button if there is active media, but maintain the mute state 
+        // in the background (tab-based mute).
+        if (myRole !== 'idle' && hasMedia) {
+            ui.volume.style.display = 'flex';
+            const volIcon = myIsMuted
+                ? `<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`
+                : `<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`;
+            ui.volume.innerHTML = volIcon;
+        } else {
+            ui.volume.style.display = 'none';
         }
 
         // --- CONTEXT MENU ---
@@ -360,51 +456,62 @@
     function handleContainerMouseLeave(e) { if (!ui || !ui.container) return; const toEl = e.relatedTarget; if (!toEl || !ui.container.contains(toEl)) hideMenu(); }
     function pulseDot() { if (ui && ui.dot) { ui.dot.classList.add('stm-pulse-animate'); ui.dot.addEventListener('animationend', () => ui.dot.classList.remove('stm-pulse-animate'), { once: true }); } }
 
-    // --- Helpers ---
-    function bidForDrop(requestId, onWin) {
-        const myInterestKey = `${GM_PREFIX}interest_${requestId}_${myInstanceId}`;
-        // Score is primarily focus time, with a huge bonus if we currently have focus
-        const score = lastFocusTime + (document.hasFocus() ? 1e12 : 0);
+    /**
+     * Extracts a valid URL from DataTransfer object with priority and filtering.
+     * This ensures links from images, sidebars, and various browsers are captured.
+     */
+    function extractUrlFromDataTransfer(dt) {
+        // 1. Ignore if it's an internal role-request drag
+        if (dt.types.includes('application/stm-role-request')) return null;
+        const plainText = dt.getData('text/plain');
+        if (plainText && plainText.trim().startsWith('STM_ROLE:')) return null;
 
-        GM_setValue(myInterestKey, {
-            score: score,
-            id: myInstanceId,
-            url: window.location.hostname,
-            ts: Date.now()
-        });
-
-        // Wait for other tabs to also post their interest (increased delay for sync)
-        setTimeout(() => {
-            const allKeys = GM_listValues();
-            const interestKeys = allKeys.filter(k => k.startsWith(`${GM_PREFIX}interest_${requestId}_`));
-            const interests = interestKeys.map(k => GM_getValue(k)).filter(Boolean);
-
-            // Sort by score (descending), then by ID as tie-breaker
-            interests.sort((a, b) => {
-                if (b.score !== a.score) return b.score - a.score;
-                return b.id < a.id ? -1 : 1;
-            });
-
-            const winner = interests[0];
-            const iWon = winner && winner.id === myInstanceId;
-
-            if (interests.length > 1) {
-                console.log(`[SplitView] Bidding for ${requestId}:`, {
-                    iWon,
-                    myScore: score,
-                    winner: winner,
-                    allBids: interests
-                });
+        // 2. Try text/uri-list (Standard for links)
+        const uriList = dt.getData('text/uri-list');
+        if (uriList) {
+            const lines = uriList.split(/[\r\n]+/);
+            for (let line of lines) {
+                line = line.trim();
+                if (line && !line.startsWith('#')) return line;
             }
+        }
 
-            if (iWon) {
-                onWin();
-            }
+        // 3. Try "URL" (IE/Legacy)
+        const urlProp = dt.getData('URL');
+        if (urlProp) return urlProp.trim();
 
-            // Cleanup our interest key after a short grace period
-            setTimeout(() => GM_deleteValue(myInterestKey), 1000);
-        }, 200);
+        // 4. Try application/x-moz-url (Firefox)
+        const mozUrl = dt.getData('text/x-moz-url');
+        if (mozUrl) {
+            const url = mozUrl.split(/[\r\n]+/)[0].trim();
+            if (url) return url;
+        }
+
+        // 5. Try text/html (Extract <a> href or <img> src)
+        const html = dt.getData('text/html');
+        if (html) {
+            try {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const link = doc.querySelector('a[href]');
+                if (link && link.href) return link.href;
+                const img = doc.querySelector('img[src]');
+                if (img && img.src) return img.src;
+            } catch (ignore) { }
+        }
+
+        // 6. Fallback to text/plain regex match
+        if (plainText) {
+            const match = plainText.match(/https?:\/\/[^\s"']+/);
+            if (match) return match[0];
+            const trimmed = plainText.trim();
+            if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
+        }
+
+        return null;
     }
+
+    // --- Helpers ---
 
     function publishNavigation(url) {
         // Ensure monotonic timestamp to guarantee listener fires even on rapid/same-URL clicks.
@@ -432,6 +539,82 @@
             GM_deleteValue(getSourceListKey(groupId));
         }
     }
+
+    // --- Media Management (Volume/Mute) ---
+    const mediaManager = {
+        hasMedia: false,
+        elements: new Set(),
+        initialized: false,
+
+        init() {
+            if (this.initialized) return;
+            this.initialized = true;
+            this.scan();
+            this.observe();
+            // Periodically check for playing state because 'play' event might be missed or not enough
+            setInterval(() => this.updateState(), 1000);
+        },
+
+        scan() {
+            document.querySelectorAll('video, audio').forEach(el => this.track(el));
+        },
+
+        track(el) {
+            if (this.elements.has(el)) return;
+            this.elements.add(el);
+
+            const update = () => this.updateState();
+            el.addEventListener('play', update);
+            el.addEventListener('pause', update);
+            el.addEventListener('volumechange', update);
+
+            // Sync with current mute state
+            el.muted = myIsMuted;
+        },
+
+        observe() {
+            const observer = new MutationObserver(mutations => {
+                for (const m of mutations) {
+                    for (const node of m.addedNodes) {
+                        if (node.nodeName === 'VIDEO' || node.nodeName === 'AUDIO') {
+                            this.track(node);
+                        } else if (node.querySelectorAll) {
+                            node.querySelectorAll('video, audio').forEach(el => this.track(el));
+                        }
+                    }
+                }
+            });
+            observer.observe(document.documentElement, { childList: true, subtree: true });
+        },
+
+        updateState() {
+            // Enforce mute state on all tracked elements if the tab is supposed to be muted.
+            // This prevents websites from programmatically unmuting themselves.
+            if (myIsMuted) {
+                this.elements.forEach(el => {
+                    if (!el.muted) el.muted = true;
+                });
+            }
+
+            let active = false;
+            for (const el of this.elements) {
+                // Consider it a "sound source" if it's playing and has volume
+                if (!el.paused && el.volume > 0 && !el.ended && el.readyState >= 2) {
+                    active = true;
+                    break;
+                }
+            }
+
+            if (active !== this.hasMedia) {
+                this.hasMedia = active;
+                updateUI();
+            }
+        },
+
+        toggleMute() {
+            saveState(myRole, myId, myLastTs, mySourceTabId, !myIsMuted);
+        }
+    };
     function setRole(role, id = null, joinExisting = false) {
         if (role === 'source') {
             let groupId;
@@ -471,44 +654,95 @@
         }
     }
 
-    let dragState = {};
-    function handleDragStart(e) {
-        if (e.button !== 0) return;
-        e.preventDefault(); e.stopPropagation();
-        dragState = { isClick: true, startX: e.clientX, startY: e.clientY };
-        window.addEventListener('mousemove', handleDragMove);
-        window.addEventListener('mouseup', handleDragEnd, { once: true });
-    }
-    function handleDragMove(e) {
-        if (dragState.isClick && (Math.abs(e.clientX - dragState.startX) > 5 || Math.abs(e.clientY - dragState.startY) > 5)) {
-            dragState.isClick = false;
+    function handleLinkDragOver(e) {
+        // Allow drop if there's any format that might contain a URL
+        const types = e.dataTransfer.types;
+        const hasUrlCandidate = types.includes('text/uri-list') ||
+            types.includes('text/plain') ||
+            types.includes('text/html') ||
+            types.includes('URL') ||
+            types.includes('text/x-moz-url');
+
+        if (hasUrlCandidate && !types.includes('application/stm-role-request')) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            if (ui && ui.dot) ui.dot.classList.add('stm-drag-over');
         }
-        if (myRole === 'source' || myRole === 'target') { ui.dot.style.cursor = 'grabbing'; }
     }
-    function handleDragEnd(e) {
-        window.removeEventListener('mousemove', handleDragMove);
-        if (dragState.isClick) {
-            toggleMenu();
-        } else if (myRole === 'source') {
-            GM_setValue(KEY_DRAG_PAIR_REQUEST, {
-                requestId: generateId(),
-                sourceId: myId,
-                timestamp: Date.now(),
-                dropX: e.screenX,
-                dropY: e.screenY
-            });
-        } else if (myRole === 'target') {
-            GM_setValue(KEY_DRAG_SOURCE_REQUEST, {
-                requestId: generateId(),
-                targetId: myId,
-                timestamp: Date.now(),
-                dropX: e.screenX,
-                dropY: e.screenY
-            });
+
+    function handleLinkDragLeave(e) {
+        if (ui && ui.dot) ui.dot.classList.remove('stm-drag-over');
+    }
+
+    function handleLinkDrop(e) {
+        if (ui && ui.dot) ui.dot.classList.remove('stm-drag-over');
+
+        const url = extractUrlFromDataTransfer(e.dataTransfer);
+        if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
+            // ALWAYS navigate the current tab, regardless of role (S or T).
+            // This maintains the existing user expectation of local navigation.
+            e.preventDefault();
+            e.stopPropagation();
+            window.location.href = url;
         }
-        ui.dot.style.cursor = 'grab';
-        dragState = {};
     }
+
+    // --- Role Drag & Drop (Native API) ---
+    function handleRoleDragStart(e) {
+        if (myRole === 'idle') {
+            // If idle, we don't initiate a role request, but we might still allow native drag
+            return;
+        }
+        const payload = {
+            sourceId: myId,
+            role: myRole,
+            instanceId: myInstanceId,
+            timestamp: Date.now()
+        };
+        e.dataTransfer.setData('application/stm-role-request', JSON.stringify(payload));
+        // Fallback for cross-browser/process compatibility
+        e.dataTransfer.setData('text/plain', `STM_ROLE:${JSON.stringify(payload)}`);
+        e.dataTransfer.effectAllowed = 'copyMove';
+    }
+
+    function handleGlobalDragOver(e) {
+        if (e.dataTransfer.types.includes('application/stm-role-request') ||
+            (e.dataTransfer.types.includes('text/plain') && e.dataTransfer.getData('text/plain').startsWith('STM_ROLE:'))) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            if (ui && ui.dot) ui.dot.classList.add('stm-global-drag-over');
+        }
+    }
+
+    function handleGlobalDragLeave(e) {
+        if (ui && ui.dot) ui.dot.classList.remove('stm-global-drag-over');
+    }
+
+    function handleGlobalDrop(e) {
+        if (ui && ui.dot) ui.dot.classList.remove('stm-global-drag-over');
+        let dataStr = e.dataTransfer.getData('application/stm-role-request');
+        if (!dataStr) {
+            const plain = e.dataTransfer.getData('text/plain');
+            if (plain && plain.startsWith('STM_ROLE:')) {
+                dataStr = plain.slice(9);
+            }
+        }
+
+        if (dataStr) {
+            try {
+                const data = JSON.parse(dataStr);
+                if (data.instanceId === myInstanceId) return; // Don't drop on self
+
+                e.preventDefault();
+                if (data.role === 'source') {
+                    setRole('target', data.sourceId);
+                } else if (data.role === 'target') {
+                    setRole('source', data.sourceId, true);
+                }
+            } catch (err) { /* ignore */ }
+        }
+    }
+
     function handleMenuClick(e) {
         const action = e.target.dataset.action;
         if (!action) return;
@@ -543,21 +777,15 @@
         return event.button === keyConfig.button && event.ctrlKey === keyConfig.ctrl && event.altKey === keyConfig.alt && event.shiftKey === keyConfig.shift;
     }
 
-    function isDropInsideThisWindow(dropX, dropY) {
-        // Use window position and size to decide whether the drop point is inside this window.
-        const left = window.screenX;
-        const top = window.screenY;
-        const right = left + window.outerWidth;
-        const bottom = top + window.outerHeight;
-        return dropX >= left && dropX <= right && dropY >= top && dropY <= bottom;
-    }
-
     function attachRoleSpecificListeners() {
         activeListeners.forEach(listenerId => GM_removeValueChangeListener(listenerId));
         activeListeners = [];
         if (myRole === 'idle' || !myId) return;
         const disconnectListener = GM_addValueChangeListener(getDisconnectKey(myId), (k, o, n, r) => { if (r) saveState('idle', null, 0, null); });
         activeListeners.push(disconnectListener);
+
+        const globalResetListener = GM_addValueChangeListener(KEY_GLOBAL_RESET, (k, o, n, r) => { if (r) saveState('idle', null, 0, null); });
+        activeListeners.push(globalResetListener);
         if (myRole === 'target') {
             // Some managers may not flag `remote` reliably; rely on timestamp monotonicity instead.
             const urlListener = GM_addValueChangeListener(getTimestampKey(myId), (k, o, n) => {
@@ -605,39 +833,12 @@
             const mergedId = myId || s.id;
             const mergedTs = myLastTs || s.lastTs;
             const mergedSourceTabId = mySourceTabId || s.sourceTabId;
-            saveState(mergedRole, mergedId, mergedTs, mergedSourceTabId);
+            const mergedIsMuted = myIsMuted || s.isMuted;
+            saveState(mergedRole, mergedId, mergedTs, mergedSourceTabId, mergedIsMuted);
             stateLoaded = true;
 
-            // Drag-pair listener: only pair the window under the drop point (ignore stale/coordless).
-            GM_addValueChangeListener(KEY_DRAG_PAIR_REQUEST, (key, oldVal, newVal, remote) => {
-                if (!remote || !stateLoaded || myRole !== 'idle' || !newVal || document.hidden) return;
-                const { dropX, dropY, sourceId, timestamp, requestId } = newVal;
-                const hasCoords = typeof dropX === 'number' && typeof dropY === 'number';
-                if (!hasCoords) return;
-                if (typeof timestamp === 'number' && Date.now() - timestamp > PAIR_MAX_AGE_MS) return;
-
-                if (isDropInsideThisWindow(dropX, dropY)) {
-                    bidForDrop(requestId || 'legacy', () => {
-                        setRole('target', sourceId);
-                    });
-                }
-            });
-
-            // Drag-source listener: create source when target is dragged to idle window
-            GM_addValueChangeListener(KEY_DRAG_SOURCE_REQUEST, (key, oldVal, newVal, remote) => {
-                if (!remote || !stateLoaded || myRole !== 'idle' || !newVal || document.hidden) return;
-                const { dropX, dropY, targetId, timestamp, requestId } = newVal;
-                const hasCoords = typeof dropX === 'number' && typeof dropY === 'number';
-                if (!hasCoords) return;
-                if (typeof timestamp === 'number' && Date.now() - timestamp > PAIR_MAX_AGE_MS) return;
-
-                if (isDropInsideThisWindow(dropX, dropY)) {
-                    bidForDrop(requestId || 'legacy', () => {
-                        // Join the existing group instead of creating a new one
-                        setRole('source', targetId, true);
-                    });
-                }
-            });
+            // Initialize media manager after state is loaded
+            mediaManager.init();
 
             // Cleanup any stale interest keys from previous sessions
             const staleInterests = GM_listValues().filter(k => k.startsWith(`${GM_PREFIX}interest_`));
@@ -662,11 +863,14 @@
                     else GM_notification({ text: 'No Source tab found.' });
                 }
             }, true);
+
+            // Listen for fullscreen changes to hide/show UI
+            document.addEventListener('fullscreenchange', () => updateUI());
         });
     }
 
     initialize();
 
-    console.log('Split Tab (Dev): Script initialized (v1.0.3)');
+    console.log('Split Tab (Dev): Script initialized (v1.0.4)');
 
 })();
