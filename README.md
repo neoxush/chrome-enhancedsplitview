@@ -1,8 +1,6 @@
 # Enhanced Split View for Chrome
 
-This userscript syncs navigation between two Chrome tabs: a **Source** and a **Target**. 
-
-While originally designed to supercharge Chrome's native Side-by-Side "Split View", it functions perfectly with **any two individual Chrome tabs or windows** (e.g., dual monitors, separate windows side-by-side), allowing you to click links in one and view them in the other.
+Easily browse and view content side by side. Click links in one tab and see them open in another, perfect for research, coding, or comparing web pages. Works with Chrome's Split View, separate windows, or across multiple monitors.
 
 ## Changelog
 
