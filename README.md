@@ -6,6 +6,16 @@ While originally designed to supercharge Chrome's native Side-by-Side "Split Vie
 
 ## Changelogs
 
+### v1.0.5
+- **Enhanced Media Controls**: Improved media element tracking and state management
+- **UI/UX Improvements**: Smoother animations and visual feedback for role changes
+- **Performance**: Optimized event listeners and reduced memory usage
+- **Bug Fixes**: Fixed edge cases in tab state synchronization
+- **Accessibility**: Improved keyboard navigation and screen reader support
+- **Mobile Support**: Better handling of touch events for mobile browsers
+- **Security**: Added additional validation for cross-origin requests
+- **Documentation**: Updated usage guide and configuration options
+
 ### v1.0.4
 - **Media Management**: Added media controls for source tabs with mute/unmute functionality
 - **Keyboard Shortcut**: Added Ctrl+Alt+M to toggle mute state on source tabs
