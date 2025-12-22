@@ -73,143 +73,29 @@ While originally designed to supercharge Chrome's native Side-by-Side "Split Vie
 *Click [here](https://github.com/neoxush/chrome-enhancedsplitview/raw/refs/heads/main/enhanced-split-view-for-chrome.user.js) to install userscript if you already had everything
 
 ## Usage Guide
+### 1. Set Up Your View
+Open the two pages you want to use.
+*   **Split View**: Use Chrome's native tiling if supported.
+*   **Separate Windows**: Simply put two browser windows side-by-side.
+    <br><img width="283" height="142" alt="image" src="https://github.com/user-attachments/assets/13fc0fae-485d-4934-aead-7fced7c3bbed" /></br>
 
-<div class="tab-container">
-  <div class="tabs">
-    <button class="tab-button active" onclick="openTab(event, 'setup')">1. Setup</button>
-    <button class="tab-button" onclick="openTab(event, 'source')">2. Activate Source</button>
-    <button class="tab-button" onclick="openTab(event, 'target')">3. Activate Target</button>
-    <button class="tab-button" onclick="openTab(event, 'browse')">4. Browse</button>
-    <button class="tab-button" onclick="openTab(event, 'manage')">5. Manage</button>
-  </div>
+### 2. Activate Source
+In your main window, hold `CTRL` + **Middle Mouse Button** (default). A floating **S** icon will appear on the right side.
+*   *Note: You can configure this shortcut by selecting "Configure Keys" from the Tampermonkey menu.*
 
-  <div id="setup" class="tab-content" style="display: block;">
-    <h3>Set Up Your View</h3>
-    <p>Open the two pages you want to use.</p>
-    <ul>
-      <li><strong>Split View</strong>: Use Chrome's native tiling if supported.</li>
-      <li><strong>Separate Windows</strong>: Simply put two browser windows side-by-side.</li>
-    </ul>
-    <img width="283" height="142" alt="Split View Example" src="https://github.com/user-attachments/assets/13fc0fae-485d-4934-aead-7fced7c3bbed" />
-  </div>
+### 3. Activate Target
+Ensure your desired Target tab/window is visible (not minimized).
+*   **Drag Method**: Click and hold the **S** icon on the Source page, drag it slightly, and release. The other visible tab will detect the signal and become the **TARGET** (marked with a **T** icon on the left side).
+*   **Manual Method**: Hold `ALT` + **Middle Mouse Button** (default) in any tab to make it a Target connected to the most recent Source.
+*   **Join Existing Group**: Use the "Join as Source" option from the S/T context menu to add additional Source tabs to an existing group.
 
-  <div id="source" class="tab-content">
-    <h3>Activate Source</h3>
-    <p>In your main window, hold <code>CTRL</code> + <strong>Middle Mouse Button</strong> (default). A floating <strong>S</strong> icon will appear on the right side.</p>
-    <div class="note">
-      <strong>Note:</strong> You can configure this shortcut by selecting "Configure Keys" from the Tampermonkey menu.
-    </div>
-  </div>
+### 4. Browse
+Click any link in the **Source** tab. It will automatically load in the **Target** tab.
 
-  <div id="target" class="tab-content">
-    <h3>Activate Target</h3>
-    <p>Ensure your desired Target tab/window is visible (not minimized).</p>
-    
-    <h4>Drag Method</h4>
-    <p>Click and hold the <strong>S</strong> icon on the Source page, drag it slightly, and release. The other visible tab will detect the signal and become the <strong>TARGET</strong> (marked with a <strong>T</strong> icon on the left side).</p>
-    
-    <h4>Manual Method</h4>
-    <p>Hold <code>ALT</code> + <strong>Middle Mouse Button</strong> (default) in any tab to make it a Target connected to the most recent Source.</p>
-    
-    <h4>Join Existing Group</h4>
-    <p>Use the "Join as Source" option from the S/T context menu to add additional Source tabs to an existing group.</p>
-  </div>
-
-  <div id="browse" class="tab-content">
-    <h3>Browse with Split View</h3>
-    <p>Once you have a Source and Target connected, simply click any link in the <strong>Source</strong> tab. The link will automatically load in the <strong>Target</strong> tab.</p>
-  </div>
-
-  <div id="manage" class="tab-content">
-    <h3>Manage Connections</h3>
-    <div class="action-item">
-      <h4>Revoke</h4>
-      <p>Right-click the S/T indicator and select "Revoke" to disconnect just this tab.</p>
-    </div>
-    
-    <div class="action-item">
-      <h4>Disconnect</h4>
-      <p>Right-click the S/T indicator and select "Disconnect" to break the connection between both tabs.</p>
-    </div>
-    
-    <div class="action-item">
-      <h4>Reset All</h4>
-      <p>Use "Reset Roles" from the Tampermonkey menu to clear all connections across all tabs.</p>
-    </div>
-  </div>
-</div>
-
-<style>
-.tab-container {
-  margin: 20px 0;
-  border: 1px solid #e1e4e8;
-  border-radius: 6px;
-  overflow: hidden;
-}
-.tabs {
-  display: flex;
-  background-color: #f6f8fa;
-  border-bottom: 1px solid #e1e4e8;
-  padding: 0 10px;
-  flex-wrap: wrap;
-}
-.tab-button {
-  background: none;
-  border: none;
-  padding: 10px 16px;
-  cursor: pointer;
-  font-size: 14px;
-  color: #24292e;
-  border-bottom: 2px solid transparent;
-  margin: 0 4px -1px 0;
-  white-space: nowrap;
-}
-.tab-button:hover {
-  color: #0366d6;
-}
-.tab-button.active {
-  background-color: #fff;
-  border-color: #e36209;
-  color: #24292e;
-  font-weight: 500;
-}
-.tab-content {
-  display: none;
-  padding: 20px;
-  background-color: #fff;
-}
-.tab-content h3 {
-  margin-top: 0;
-}
-.note {
-  background-color: #f6f8fa;
-  border-left: 4px solid #0366d6;
-  padding: 10px 15px;
-  margin: 10px 0;
-  border-radius: 0 3px 3px 0;
-}
-.action-item {
-  margin-bottom: 15px;
-}
-.action-item:last-child {
-  margin-bottom: 0;
-}
-</style>
-
-<script>
-function openTab(evt, tabName) {
-  const tabContents = document.getElementsByClassName("tab-content");
-  for (let i = 0; i < tabContents.length; i++) {
-    tabContents[i].style.display = "none";
-  }
-  const tabButtons = document.getElementsByClassName("tab-button");
-  for (let i = 0; i < tabButtons.length; i++) {
-    tabButtons[i].className = tabButtons[i].className.replace(" active", "");
-  }
-  document.getElementById(tabName).style.display = "block";
-  evt.currentTarget.className += " active";
-}
-</script>
+### 5. Manage Connections
+- **Revoke**: Right-click the S/T indicator and select "Revoke" to disconnect just this tab.
+- **Disconnect**: Right-click the S/T indicator and select "Disconnect" to break the connection between both tabs.
+- **Reset All**: Use "Reset Roles" from the Tampermonkey menu to clear all connections across all tabs.
 
 ## Configuration
 You can customize the mouse shortcuts by selecting **Configure Keys** from the Tampermonkey menu:
