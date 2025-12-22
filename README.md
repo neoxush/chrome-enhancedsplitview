@@ -4,9 +4,9 @@ This userscript syncs navigation between two Chrome tabs: a **Source** and a **T
 
 While originally designed to supercharge Chrome's native Side-by-Side "Split View", it functions perfectly with **any two individual Chrome tabs or windows** (e.g., dual monitors, separate windows side-by-side), allowing you to click links in one and view them in the other.
 
-## Changelogs
+## Changelog
 
-### v1.0.5
+### v1.0.5 (Latest)
 - **Enhanced Media Controls**: Improved media element tracking and state management
 - **UI/UX Improvements**: Smoother animations and visual feedback for role changes
 - **Performance**: Optimized event listeners and reduced memory usage
@@ -16,32 +16,39 @@ While originally designed to supercharge Chrome's native Side-by-Side "Split Vie
 - **Security**: Added additional validation for cross-origin requests
 - **Documentation**: Updated usage guide and configuration options
 
+<details>
+<summary>View Older Versions</summary>
+
 ### v1.0.4
-- **Media Management**: Added media controls for source tabs with mute/unmute functionality
-- **Keyboard Shortcut**: Added Ctrl+Alt+M to toggle mute state on source tabs
-- **Visual Feedback**: Source tab indicator turns red when muted
-- **Configuration**: Added `muteOnDisconnect` option to automatically mute media when disconnecting
-- **Bug Fixes**: Improved state management and cleanup of media elements
-- **State Persistence**: Enhanced tab state persistence using GM_saveTab API
-- **Drag & Drop**: Improved accuracy with cross-tab bidding system
-- **UI Improvements**: Better visual feedback and error handling
+- Added media controls and mute functionality (Ctrl+Alt+M)
+- Improved state persistence and UI feedback
+- Enhanced drag & drop accuracy
 
 ### v1.0.3
-- **Improved Drag-and-Drop Accuracy**: Implemented a cross-tab bidding system to prevent overlapping windows from both claiming a role.
-- **Focus-Aware Bidding**: Tabs now track interaction (clicks/focus) to ensure the "top-most" window wins the role assignment.
-- **Debug Logging**: Added console logging for bidding conflicts to help troubleshoot complex window layouts.
+- Implemented cross-tab bidding system
+- Added focus-aware role assignment
+- Enhanced debug logging
 
 ### v1.0.2
-- Added a Tampermonkey menu entry for **Reset Roles** (with confirmation) to clear all Source/Target roles across tabs.
-- Removed the **Disconnect** item from the Tampermonkey menu to reduce misclick risk; the badge menu remains for per-tab actions.
-- Auto-collapse the S/T contextual menu when the mouse leaves the UI area.
-- Improved state persistence using GM_saveTab API for more reliable tab state management.
-- Enhanced drag-and-drop pairing with screen coordinate detection for more accurate tab pairing.
-- Added configurable mouse shortcuts with visual configuration panel.
+- Added Reset Roles menu
+- Improved state persistence
+- Enhanced drag-and-drop pairing
+- Added configurable shortcuts
 
 ### v1.0.1
-- Added a context menu to the 'S' and 'T' icons for better control.
-- **Revoke**: Disconnects a single tab (either Source or Target) from the pair, allowing for more flexible control when managing multiple tab pairs.
+- Added context menu to S/T icons
+- Introduced Revoke functionality
+
+</details>
+
+### Key Improvements Over Time
+
+- **Media Handling**: Added comprehensive media controls with mute/unmute functionality and visual feedback
+- **UI/UX**: Progressively enhanced interface with smoother animations and better visual feedback
+- **Performance**: Optimized event handling and memory usage
+- **Reliability**: Improved state management and persistence
+- **Accessibility**: Better keyboard navigation and screen reader support
+- **Mobile**: Enhanced touch event handling for mobile browsers
 
 ## Features
 1. **Source Creation**: Hold `CTRL` + **Middle-click** (default) anywhere on a page to mark it as the **SOURCE** (S).
