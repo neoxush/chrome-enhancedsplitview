@@ -55,57 +55,21 @@ Easily browse and view content side by side. Click links in one tab and see them
 <details>
 <summary>📋 View Step-by-Step Guide</summary>
 
-```html
-<div class="tab">
-  <button class="tablinks" onclick="openTab(event, 'step1')" id="defaultOpen">1. Source Creation</button>
-  <button class="tablinks" onclick="openTab(event, 'step2')">2. Target Creation</button>
-  <button class="tablinks" onclick="openTab(event, 'step3')">3. Pairing</button>
-</div>
+### 1. Create a Source Tab
+1. Navigate to the page you want to use as your source
+2. Hold `CTRL` + **Middle-click** anywhere on the page
+3. Look for the floating **S** indicator in the top-right corner
 
-<div id="step1" class="tabcontent">
-  <h4>Create a Source Tab</h4>
-  <p>1. Navigate to the page you want to use as your source</p>
-  <p>2. Hold <code>CTRL</code> + <strong>Middle-click</strong> anywhere on the page</p>
-  <p>3. Look for the floating <strong>S</strong> indicator in the top-right corner</p>
-</div>
+### 2. Create a Target Tab
+1. Open or switch to another tab where you want content to appear
+2. Hold `ALT` + **Middle-click** anywhere on the page
+3. Look for the floating **T** indicator in the top-left corner
 
-<div id="step2" class="tabcontent">
-  <h4>Create a Target Tab</h4>
-  <p>1. Open or switch to another tab where you want content to appear</p>
-  <p>2. Hold <code>ALT</code> + <strong>Middle-click</strong> anywhere on the page</p>
-  <p>3. Look for the floating <strong>T</strong> indicator in the top-left corner</p>
-</div>
-
-<div id="step3" class="tabcontent">
-  <h4>Pair Source and Target</h4>
-  <p>1. Hover over the <strong>S</strong> indicator in the source tab</p>
-  <p>2. Click and hold, then drag slightly to the right</p>
-  <p>3. Release to automatically pair with the target tab</p>
-  <p>4. The connection is now active - links in the source will open in the target</p>
-</div>
-
-<style>
-.tab { overflow: hidden; border: 1px solid #ccc; background-color: #f1f1f1; border-radius: 4px 4px 0 0; }
-.tab button { background-color: inherit; float: left; border: none; outline: none; cursor: pointer; padding: 10px 16px; transition: 0.3s; font-size: 14px; }
-.tab button:hover { background-color: #ddd; }
-.tab button.active { background-color: #fff; border-bottom: 2px solid #0366d6; font-weight: 600; }
-.tabcontent { display: none; padding: 12px; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; background: white; margin-bottom: 20px; }
-.tabcontent { animation: fadeEffect 0.5s; } @keyframes fadeEffect { from {opacity: 0;} to {opacity: 1;} }
-</style>
-
-<script>
-document.getElementById("defaultOpen").click();
-function openTab(evt, stepName) {
-  var i, tabcontent, tablinks;
-  tabcontent = document.getElementsByClassName("tabcontent");
-  for (i = 0; i < tabcontent.length; i++) { tabcontent[i].style.display = "none"; }
-  tablinks = document.getElementsByClassName("tablinks");
-  for (i = 0; i < tablinks.length; i++) { tablinks[i].className = tablinks[i].className.replace(" active", ""); }
-  document.getElementById(stepName).style.display = "block";
-  evt.currentTarget.className += " active";
-}
-</script>
-```
+### 3. Pair Source and Target
+1. Hover over the **S** indicator in the source tab
+2. Click and hold, then drag slightly to the right
+3. Release to automatically pair with the target tab
+4. The connection is now active - links in the source will open in the target
 
 </details>
 
