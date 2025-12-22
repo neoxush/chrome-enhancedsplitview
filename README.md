@@ -51,17 +51,52 @@ While originally designed to supercharge Chrome's native Side-by-Side "Split Vie
 - **Mobile**: Enhanced touch event handling for mobile browsers
 
 ## Features
-1. **Source Creation**: Hold `CTRL` + **Middle-click** (default) anywhere on a page to mark it as the **SOURCE** (S).
-2. **Target Creation**: Hold `ALT` + **Middle-click** (default) to mark current tab as **TARGET** (T) and connect to the most recent Source.
-3. **Easy Pairing (Drag & Drop)**: Once you have a Source, click and hold the "S" icon, drag it, and release. The script will automatically pair with the other currently visible tab (the **TARGET**).
-4. **Link Syncing**: Any link clicked in the Source tab automatically opens in the Target tab.
-5. **Visual Interface**: Floating "S" (Source) and "T" (Target) indicators with context menus for control.
-6. **Media Controls**: Mute/unmute media in source tabs with Ctrl+Alt+M or via the UI.
-7. **Hotkey Customization**: Fully configurable mouse shortcuts via the visual configuration panel.
-8. **Flexible Layouts**: Works with Chrome's native Split View, two separate windows, or dual monitors.
-9. **Group Management**: Multiple Source tabs can be grouped together, with Targets joining existing groups.
-10. **State Persistence**: Tab roles and connections survive page refreshes and navigation changes.
-11. **Context Menu Controls**: Right-click on S/T indicators for options like Revoke, Disconnect, and Join as Source.
+
+### 1. Getting Started
+   1. **Source Creation**  
+      Hold `CTRL` + **Middle-click** (default) anywhere on a page to mark it as the **SOURCE** (S).
+   
+   2. **Target Creation**  
+      Hold `ALT` + **Middle-click** (default) to mark current tab as **TARGET** (T) and connect to the most recent Source.
+   
+   3. **Easy Pairing (Drag & Drop)**  
+      Click and hold the "S" icon, drag it, and release to automatically pair with another visible tab.
+
+### 2. Core Functionality
+   1. **Link Syncing**  
+      Any link clicked in the Source tab automatically opens in the Target tab.
+   
+   2. **Visual Interface**  
+      - Floating "S" (Source) and "T" (Target) indicators
+      - Context menus for control
+      - Visual feedback for actions
+
+### 3. Advanced Features
+   1. **Media Controls**  
+      - Mute/unmute with `Ctrl+Alt+M`
+      - Visual feedback for muted state
+      - Automatic media handling
+   
+   2. **Customization**  
+      - Configurable mouse shortcuts
+      - Visual configuration panel
+      - Adjustable UI positioning
+
+### 4. Layout & Management
+   1. **Layout Options**  
+      - Chrome's native Split View
+      - Separate windows
+      - Dual monitor support
+   
+   2. **Group Management**  
+      - Multiple Source tabs per group
+      - Dynamic Target assignment
+      - Context menu controls
+
+### 5. Reliability
+   - **State Persistence** across page refreshes
+   - **Automatic Recovery** of connections
+   - **Error Handling** with visual feedback
 
 ## How it Works
 ![chrome_split_view_preview](https://github.com/user-attachments/assets/cb101a97-e580-412f-9844-1cb3befa3e3b)
