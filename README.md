@@ -2,6 +2,15 @@
 
 Easily browse and view content side by side. Click links in one tab and see them open in another, perfect for research, coding, or comparing web pages. Works with Chrome's Split View, separate windows, or across multiple monitors.
 
+## How it Works
+![chrome_split_view_preview](https://github.com/user-attachments/assets/cb101a97-e580-412f-9844-1cb3befa3e3b)
+
+## Installation
+1. Install a userscript manager like [Tampermonkey](https://www.tampermonkey.net) or Violentmonkey.
+2. Create a new script and copy/paste the code from `enhanced-split-view-for-chrome.user.js` in this repository.
+3. Save the script.
+*Click [here](https://github.com/neoxush/chrome-enhancedsplitview/raw/refs/heads/main/enhanced-split-view-for-chrome.user.js) to install userscript if you already had everything
+
 ## Changelog
 
 ### v1.0.5 (Latest)
@@ -113,15 +122,6 @@ Easily browse and view content side by side. Click links in one tab and see them
    - **State Persistence** across page refreshes
    - **Automatic Recovery** of connections
    - **Error Handling** with visual feedback
-
-## How it Works
-![chrome_split_view_preview](https://github.com/user-attachments/assets/cb101a97-e580-412f-9844-1cb3befa3e3b)
-
-## Installation
-1. Install a userscript manager like [Tampermonkey](https://www.tampermonkey.net) or Violentmonkey.
-2. Create a new script and copy/paste the code from `enhanced-split-view-for-chrome.user.js` in this repository.
-3. Save the script.
-*Click [here](https://github.com/neoxush/chrome-enhancedsplitview/raw/refs/heads/main/enhanced-split-view-for-chrome.user.js) to install userscript if you already had everything
 
 ## Usage Guide
 ### 1. Set Up Your View
