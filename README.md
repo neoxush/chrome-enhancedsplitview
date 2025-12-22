@@ -52,15 +52,69 @@ While originally designed to supercharge Chrome's native Side-by-Side "Split Vie
 
 ## Features
 
-### 1. Getting Started
-   1. **Source Creation**  
-      Hold `CTRL` + **Middle-click** (default) anywhere on a page to mark it as the **SOURCE** (S).
-   
-   2. **Target Creation**  
-      Hold `ALT` + **Middle-click** (default) to mark current tab as **TARGET** (T) and connect to the most recent Source.
-   
-   3. **Easy Pairing (Drag & Drop)**  
-      Click and hold the "S" icon, drag it, and release to automatically pair with another visible tab.
+### Getting Started
+
+<details>
+<summary>📋 View Step-by-Step Guide</summary>
+
+```html
+<div class="tab">
+  <button class="tablinks" onclick="openTab(event, 'step1')" id="defaultOpen">1. Source Creation</button>
+  <button class="tablinks" onclick="openTab(event, 'step2')">2. Target Creation</button>
+  <button class="tablinks" onclick="openTab(event, 'step3')">3. Pairing</button>
+</div>
+
+<div id="step1" class="tabcontent">
+  <h4>Create a Source Tab</h4>
+  <p>1. Navigate to the page you want to use as your source</p>
+  <p>2. Hold <code>CTRL</code> + <strong>Middle-click</strong> anywhere on the page</p>
+  <p>3. Look for the floating <strong>S</strong> indicator in the top-right corner</p>
+</div>
+
+<div id="step2" class="tabcontent">
+  <h4>Create a Target Tab</h4>
+  <p>1. Open or switch to another tab where you want content to appear</p>
+  <p>2. Hold <code>ALT</code> + <strong>Middle-click</strong> anywhere on the page</p>
+  <p>3. Look for the floating <strong>T</strong> indicator in the top-left corner</p>
+</div>
+
+<div id="step3" class="tabcontent">
+  <h4>Pair Source and Target</h4>
+  <p>1. Hover over the <strong>S</strong> indicator in the source tab</p>
+  <p>2. Click and hold, then drag slightly to the right</p>
+  <p>3. Release to automatically pair with the target tab</p>
+  <p>4. The connection is now active - links in the source will open in the target</p>
+</div>
+
+<style>
+.tab { overflow: hidden; border: 1px solid #ccc; background-color: #f1f1f1; border-radius: 4px 4px 0 0; }
+.tab button { background-color: inherit; float: left; border: none; outline: none; cursor: pointer; padding: 10px 16px; transition: 0.3s; font-size: 14px; }
+.tab button:hover { background-color: #ddd; }
+.tab button.active { background-color: #fff; border-bottom: 2px solid #0366d6; font-weight: 600; }
+.tabcontent { display: none; padding: 12px; border: 1px solid #ccc; border-top: none; border-radius: 0 0 4px 4px; background: white; margin-bottom: 20px; }
+.tabcontent { animation: fadeEffect 0.5s; } @keyframes fadeEffect { from {opacity: 0;} to {opacity: 1;} }
+</style>
+
+<script>
+document.getElementById("defaultOpen").click();
+function openTab(evt, stepName) {
+  var i, tabcontent, tablinks;
+  tabcontent = document.getElementsByClassName("tabcontent");
+  for (i = 0; i < tabcontent.length; i++) { tabcontent[i].style.display = "none"; }
+  tablinks = document.getElementsByClassName("tablinks");
+  for (i = 0; i < tablinks.length; i++) { tablinks[i].className = tablinks[i].className.replace(" active", ""); }
+  document.getElementById(stepName).style.display = "block";
+  evt.currentTarget.className += " active";
+}
+</script>
+```
+
+</details>
+
+#### Quick Reference
+- **Source Creation**: `CTRL` + **Middle-click** to mark as **SOURCE** (S)
+- **Target Creation**: `ALT` + **Middle-click** to mark as **TARGET** (T)
+- **Pairing**: Drag the "S" icon to pair with a target tab
 
 ### 2. Core Functionality
    1. **Link Syncing**  
