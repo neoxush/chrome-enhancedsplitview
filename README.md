@@ -13,7 +13,14 @@ Easily browse and view content side by side. Click links in one tab and see them
 
 ## Changelog
 
-### v1.0.5 (Latest)
+### v1.0.6 (Latest)
+- **Persistent Mute State**: Added tracking of mute state across page navigations
+- **Media Controls**: Fixed mute state persistence when clicking links
+
+<details>
+<summary>View Older Versions</summary>
+
+### v1.0.5
 - **Enhanced Media Controls**: Improved media element tracking and state management
 - **UI/UX Improvements**: Smoother animations and visual feedback for role changes
 - **Performance**: Optimized event listeners and reduced memory usage
@@ -22,9 +29,6 @@ Easily browse and view content side by side. Click links in one tab and see them
 - **Mobile Support**: Better handling of touch events for mobile browsers
 - **Security**: Added additional validation for cross-origin requests
 - **Documentation**: Updated usage guide and configuration options
-
-<details>
-<summary>View Older Versions</summary>
 
 ### v1.0.4
 - Added media controls and mute functionality (Ctrl+Alt+M)

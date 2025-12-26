@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhanced Split View for Chrome
 // @namespace    http://tampermonkey.net/
-// @version      1.0.5
+// @version      1.0.6
 // @description  This scripts adds extra control over Chrome's native split view function, which allows to pin a source tab to open new content on the side.
 // @author       https://github.com/neoxush/VibeCoding/tree/master/browser-extensions/enhanced-split-view
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=google.com
@@ -16,23 +16,110 @@
 // @grant        GM_saveTab
 // @grant        GM_listValues
 // @grant        GM_deleteValue
-// @grant        GM_notification
+// Notification system replaces GM_notification
 // ==/UserScript==
 
 (function () {
     'use strict';
+
+    // --- Modern Notification System ---
+    const Notify = {
+        show(type, message, title = '') {
+            const notification = document.createElement('div');
+            notification.className = `esv-notification ${type}`;
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 12px 20px;
+                border-radius: 6px;
+                color: white;
+                max-width: 320px;
+                z-index: 9999;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                transform: translateX(120%);
+                transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+                opacity: 0;
+                display: flex;
+                align-items: center;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', sans-serif;
+                backdrop-filter: blur(10px);
+                background-color: ${{
+                    success: 'rgba(46, 204, 113, 0.95)',
+                    error: 'rgba(231, 76, 60, 0.95)',
+                    info: 'rgba(52, 152, 219, 0.95)',
+                    warning: 'rgba(241, 196, 15, 0.95)'
+                }[type]};
+            `;
+
+            const icon = {
+                success: '✓',
+                error: '✕',
+                info: 'ℹ',
+                warning: '⚠'
+            }[type] || 'ℹ';
+
+            notification.innerHTML = `
+                <span style="margin-right: 12px; font-size: 18px; flex-shrink: 0;">${icon}</span>
+                <div style="flex: 1;">
+                    ${title ? `<div style="font-weight: 600; margin: 0 0 4px 0; font-size: 14px;">${title}</div>` : ''}
+                    <div style="margin: 0; font-size: 13px; opacity: 0.9; line-height: 1.4;">${message}</div>
+                </div>
+                <span class="esv-notification-close" style="margin-left: 12px; cursor: pointer; opacity: 0.7; font-size: 16px; line-height: 1; transition: opacity 0.2s;" title="Dismiss">&times;</span>
+            `;
+
+            document.body.appendChild(notification);
+
+            // Trigger reflow
+            void notification.offsetWidth;
+
+            // Show notification
+            notification.style.transform = 'translateX(0)';
+            notification.style.opacity = '1';
+
+            // Auto-remove after 4 seconds
+            const removeNotification = () => {
+                notification.style.transform = 'translateX(120%)';
+                notification.style.opacity = '0';
+                setTimeout(() => notification.remove(), 300);
+            };
+            const timeout = setTimeout(removeNotification, 4000);
+
+            // Close button
+            const closeBtn = notification.querySelector('.esv-notification-close');
+            closeBtn.onclick = () => {
+                clearTimeout(timeout);
+                removeNotification();
+            };
+
+            return notification;
+        },
+
+        success(message, title = 'Success') {
+            return this.show('success', message, title);
+        },
+
+        error(message, title = 'Error') {
+            return this.show('error', message, title);
+        },
+
+        info(message, title = 'Information') {
+            return this.show('info', message, title);
+        },
+
+        warning(message, title = 'Warning') {
+            return this.show('warning', message, title);
+        }
+    };
 
     // Note: You can reorder the right-click menu items by editing the 'contextMenuItems' array in the updateUI function.
 
     // --- Configuration & Keys ---
     const GM_PREFIX = 'stm_gm_v18_';
     const KEY_LATEST_SOURCE = `${GM_PREFIX}latest_source`;
-    const KEY_DRAG_PAIR_REQUEST = `${GM_PREFIX}drag_pair_request`;
-    const KEY_DRAG_SOURCE_REQUEST = `${GM_PREFIX}drag_source_request`;
     const KEY_CONFIG = `${GM_PREFIX}config`;
     const KEY_GLOBAL_RESET = `${GM_PREFIX}global_reset`;
     const KEY_UI_POS = `${GM_PREFIX}ui_pos`;
-    const PAIR_MAX_AGE_MS = 5000;
     const getTargetUrlKey = (id) => `${GM_PREFIX}url_${id}`;
     const getTimestampKey = (id) => `${GM_PREFIX}ts_${id}`;
     const getDisconnectKey = (id) => `${GM_PREFIX}disconnect_${id}`;
@@ -61,8 +148,21 @@
     // Lightweight, synchronous prime from window.name so navigation retains role/id even before async loadState finishes.
     function primeStateFromWindowName() {
         try {
-            const parsed = JSON.parse(window.name || '{}');
-            if (parsed.stmRole && parsed.stmId) {
+            // Try window.name first
+            let payloadStr = window.name;
+            let parsed = null;
+
+            try {
+                parsed = JSON.parse(payloadStr || '{}');
+            } catch (e) { /* not JSON */ }
+
+            // Fallback to sessionStorage if window.name is empty or not ours
+            if (!parsed || !parsed.stmRole) {
+                payloadStr = sessionStorage.getItem('stm_state');
+                parsed = JSON.parse(payloadStr || '{}');
+            }
+
+            if (parsed && parsed.stmRole && parsed.stmId) {
                 myRole = parsed.stmRole;
                 myId = parsed.stmId;
                 myLastTs = parsed.stmLastTs || 0;
@@ -86,7 +186,7 @@
     function saveState(role, id, lastTs = 0, sourceTabId = null, isMuted = null) {
         myRole = role; myId = id; myLastTs = lastTs; mySourceTabId = sourceTabId;
 
-        // If we are becoming idle, we must unmute. 
+        // If we are becoming idle, we must unmute.
         // Otherwise, we only update mute state if explicitly provided.
         if (myRole === 'idle') {
             myIsMuted = false;
@@ -95,10 +195,29 @@
         }
 
         // Apply mute state to all tracked media elements
-        if (mediaManager && mediaManager.elements) {
-            mediaManager.elements.forEach(el => {
-                el.muted = myIsMuted;
-            });
+        if (mediaManager) {
+            if (mediaManager.elements) {
+                mediaManager.elements.forEach(el => {
+                    el.muted = myIsMuted;
+                });
+            }
+            if (mediaManager.muteAllIframes) {
+                mediaManager.muteAllIframes(myIsMuted);
+            }
+        }
+
+        // Save current UI position when establishing a new role
+        if (role !== 'idle' && ui && ui.container) {
+            const currentPos = GM_getValue(KEY_UI_POS, {});
+            currentPos[role] = {
+                top: ui.container.style.top || '85px',
+                left: ui.container.style.left || 'auto',
+                right: ui.container.style.right || 'auto',
+                side: ui.container.classList.contains('stm-side-left') ? 'left' :
+                    ui.container.classList.contains('stm-side-right') ? 'right' :
+                        (role === 'target' ? 'left' : 'right')
+            };
+            GM_setValue(KEY_UI_POS, currentPos);
         }
 
         // Simplified Logic: Save directly to the Tab Object
@@ -111,8 +230,7 @@
             isMuted: myIsMuted
         });
 
-        // Secondary fallback persistence using window.name to survive edge cases.
-        // Secondary fallback persistence using window.name to survive edge cases.
+        // Secondary fallback persistence using window.name and sessionStorage to survive edge cases.
         try {
             const payload = { stmRole: myRole, stmId: myId, stmLastTs: myLastTs, stmSourceTabId: mySourceTabId, stmIsMuted: myIsMuted };
             const payloadStr = JSON.stringify(payload);
@@ -195,15 +313,15 @@
         GM_addStyle(`
             @keyframes stm-pulse { 0% {transform: scale(1);} 50% {transform: scale(1.2);} 100% {transform: scale(1);} }
             .stm-pulse-animate { animation: stm-pulse 0.5s ease-out; }
-            
-            #stm-ui-container { 
-                position: fixed; 
-                z-index: 2147483647; 
-                user-select: none; 
-                display: flex; 
-                align-items: center; 
-                justify-content: center; 
-                gap: 0; 
+
+            #stm-ui-container {
+                position: fixed;
+                z-index: 2147483647;
+                user-select: none;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0;
                 background: rgba(20, 20, 20, 0.7);
                 backdrop-filter: blur(12px);
                 -webkit-backdrop-filter: blur(12px);
@@ -213,36 +331,36 @@
                 box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.05);
                 transition: gap 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s, background-color 0.3s, transform 0.2s;
             }
-            
+
             #stm-ui-container.stm-collapsed {
                 background: rgba(20, 20, 20, 0.4);
                 padding: 2px;
                 border-color: rgba(255, 255, 255, 0.05);
             }
-            
+
             #stm-ui-container.stm-side-right { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
             #stm-ui-container.stm-side-left { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
 
-            #stm-status-dot { 
-                width: 32px; 
-                height: 32px; 
-                display: flex; 
-                align-items: center; 
-                justify-content: center; 
-                font-family: 'Inter', system-ui, -apple-system, sans-serif; 
-                font-size: 14px; 
-                font-weight: 800; 
-                color: white; 
-                cursor: pointer; 
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+            #stm-status-dot {
+                width: 32px;
+                height: 32px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-family: 'Inter', system-ui, -apple-system, sans-serif;
+                font-size: 14px;
+                font-weight: 800;
+                color: white;
+                cursor: pointer;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
                 border-radius: 50%;
                 position: relative;
                 z-index: 2;
             }
-            
+
             .stm-side-right #stm-status-dot { background: linear-gradient(135deg, #28a745, #1e7e34); box-shadow: 0 2px 10px rgba(40, 167, 69, 0.3); }
             .stm-side-left #stm-status-dot { background: linear-gradient(135deg, #007bff, #0056b3); box-shadow: 0 2px 10px rgba(0, 123, 255, 0.3); }
-            
+
             .stm-collapsed #stm-status-dot { transform: scale(0.85); opacity: 0.7; }
             #stm-ui-container:hover #stm-status-dot { transform: scale(1); opacity: 1; }
 
@@ -269,15 +387,15 @@
             #stm-status-dot.stm-drag-over { background: #ffc107 !important; transform: scale(1.1) !important; box-shadow: 0 0 20px rgba(255, 193, 7, 0.6); }
             #stm-status-dot.stm-global-drag-over { background: #17a2b8 !important; transform: scale(1.05); box-shadow: 0 0 15px rgba(23, 162, 184, 0.5); }
 
-            #stm-volume-btn { 
-                width: 28px; 
-                height: 28px; 
-                background: rgba(255, 255, 255, 0.1); 
-                border-radius: 50%; 
-                display: flex; 
-                align-items: center; 
-                justify-content: center; 
-                cursor: pointer; 
+            #stm-volume-btn {
+                width: 28px;
+                height: 28px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
                 transition: all 0.2s;
                 opacity: 0;
                 width: 0;
@@ -287,26 +405,49 @@
             #stm-volume-btn:hover { background: rgba(255, 255, 255, 0.2); transform: scale(1.1); }
             #stm-volume-btn svg { width: 16px; height: 16px; fill: #fff; }
 
-            #stm-menu { 
-                display: none; 
-                position: absolute; 
-                top: calc(100% + 8px); 
-                background: rgba(30, 30, 30, 0.95); 
+            #stm-menu {
+                display: none;
+                position: absolute;
+                top: calc(100% + 8px);
+                background: rgba(30, 30, 30, 0.95);
                 backdrop-filter: blur(16px);
                 border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 12px; 
-                width: 140px; 
-                overflow: hidden; 
-                box-shadow: 0 10px 25px rgba(0,0,0,0.5); 
-                font-family: 'Inter', system-ui, sans-serif; 
+                border-radius: 12px;
+                width: 140px;
+                overflow: hidden;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+                font-family: 'Inter', system-ui, sans-serif;
                 font-size: 13px;
                 z-index: 3;
             }
             #stm-ui-container.stm-side-right #stm-menu { right: 0; }
             #stm-ui-container.stm-side-left #stm-menu { left: 0; }
-            .stm-menu-item { padding: 10px 16px; color: #eee; cursor: pointer; transition: all 0.2s; }
-            .stm-menu-item:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
-            .stm-menu-item:not(:last-child) { border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+            .stm-menu-item {
+                display: block;
+                width: 100%;
+                padding: 10px 16px;
+                background: none;
+                border: none;
+                text-align: left;
+                color: #eee;
+                cursor: pointer;
+                transition: all 0.2s;
+                font-family: inherit;
+                font-size: 13px;
+                line-height: 1.4;
+            }
+            .stm-menu-item:hover, .stm-menu-item:focus {
+                background: rgba(255, 255, 255, 0.1);
+                color: #fff;
+                outline: none;
+            }
+            .stm-menu-item:focus-visible {
+                outline: 2px solid #4CAF50;
+                outline-offset: -2px;
+            }
+            .stm-menu-item:not(:last-child) {
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            }
 
             #stm-config-panel { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #1a1a1a; border: 1px solid #333; border-radius: 16px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); z-index: 2147483648; font-family: 'Inter', system-ui, sans-serif; color: #fff; min-width: 400px; }
             #stm-config-panel h3 { margin: 0 0 20px 0; font-size: 20px; font-weight: 700; color: #fff; }
@@ -350,9 +491,9 @@
                 <div class="stm-config-row">
                     <div class="stm-config-label">Modifiers:</div>
                     <div class="stm-config-input">
-                        <label><input type="checkbox" id="stm-source-ctrl"> Ctrl</label>
-                        <label><input type="checkbox" id="stm-source-alt"> Alt</label>
-                        <label><input type="checkbox" id="stm-source-shift"> Shift</label>
+                        <label for="stm-source-ctrl"><input type="checkbox" id="stm-source-ctrl"> Ctrl</label>
+                        <label for="stm-source-alt"><input type="checkbox" id="stm-source-alt"> Alt</label>
+                        <label for="stm-source-shift"><input type="checkbox" id="stm-source-shift"> Shift</label>
                     </div>
                 </div>
             </div>
@@ -371,9 +512,9 @@
                 <div class="stm-config-row">
                     <div class="stm-config-label">Modifiers:</div>
                     <div class="stm-config-input">
-                        <label><input type="checkbox" id="stm-target-ctrl"> Ctrl</label>
-                        <label><input type="checkbox" id="stm-target-alt"> Alt</label>
-                        <label><input type="checkbox" id="stm-target-shift"> Shift</label>
+                        <label for="stm-target-ctrl"><input type="checkbox" id="stm-target-ctrl"> Ctrl</label>
+                        <label for="stm-target-alt"><input type="checkbox" id="stm-target-alt"> Alt</label>
+                        <label for="stm-target-shift"><input type="checkbox" id="stm-target-shift"> Shift</label>
                     </div>
                 </div>
             </div>
@@ -420,13 +561,13 @@
         };
         saveConfig(newConfig);
         hideConfigPanel();
-        GM_notification({ text: 'Configuration saved!' });
+        Notify.success('Configuration saved!');
     }
 
     function resetConfigToDefault() {
         saveConfig(DEFAULT_CONFIG);
         showConfigPanel();
-        GM_notification({ text: 'Configuration reset to defaults!' });
+        Notify.info('Configuration reset to defaults!');
     }
 
     function resetAllRoles() {
@@ -473,6 +614,45 @@
             sessionStorage.removeItem('stm_state');
         } catch (err) { /* ignore */ }
         saveState('idle', null, 0, null);
+    }
+
+    function applySavedPosition() {
+        if (!ui || !ui.container) return;
+
+        const savedPos = GM_getValue(KEY_UI_POS, null);
+        let side, top;
+
+        if (savedPos && savedPos[myRole]) {
+            // Use role-specific saved position
+            const rolePos = savedPos[myRole];
+            side = rolePos.side || ((myRole === 'target') ? 'left' : 'right');
+            top = rolePos.top || '85px';
+        } else if (savedPos && savedPos.side) {
+            // Fallback to legacy single position format
+            side = savedPos.side;
+            top = savedPos.top || '85px';
+        } else {
+            // Default position based on role
+            side = (myRole === 'target') ? 'left' : 'right';
+            top = '85px';
+        }
+
+        ui.container.classList.remove('stm-side-left', 'stm-side-right');
+        ui.container.classList.add(`stm-side-${side}`);
+
+        // Apply positioning based on side
+        if (side === 'left') {
+            ui.container.style.left = '0';
+            ui.container.style.right = 'auto';
+            ui.container.style.flexDirection = 'row-reverse';
+        } else {
+            ui.container.style.right = '0';
+            ui.container.style.left = 'auto';
+            ui.container.style.flexDirection = 'row';
+        }
+
+        // Apply vertical position
+        ui.container.style.top = top;
     }
 
     function updateUI() {
@@ -542,34 +722,13 @@
         // The UI container is ONLY shown if the tab has an active role (Source or Target) AND not in fullscreen.
         ui.container.style.display = (myRole === 'idle' || isFullscreen) ? 'none' : 'flex';
 
-        // Apply saved position or defaults
-        const savedPos = GM_getValue(KEY_UI_POS, null);
-        const side = (myRole === 'target') ? 'left' : 'right';
-
-        ui.container.classList.remove('stm-side-left', 'stm-side-right');
-        ui.container.classList.add(`stm-side-${side}`);
-
-        if (savedPos) {
-            ui.container.style.top = savedPos.top;
-            if (side === 'left') {
-                ui.container.style.left = '0';
-                ui.container.style.right = 'auto';
-                ui.container.style.flexDirection = 'row-reverse';
-            } else {
-                ui.container.style.right = '0';
-                ui.container.style.left = 'auto';
-                ui.container.style.flexDirection = 'row';
-            }
-        } else {
-            ui.container.style.top = '85px';
-            if (side === 'left') {
-                ui.container.style.left = '0';
-                ui.container.style.right = 'auto';
-                ui.container.style.flexDirection = 'row-reverse';
-            } else {
-                ui.container.style.right = '0';
-                ui.container.style.left = 'auto';
-                ui.container.style.flexDirection = 'row';
+        // Apply saved position or update if needed
+        if (myRole !== 'idle' && !isFullscreen) {
+            applySavedPosition();
+        } else if (myRole === 'idle') {
+            // Hide container when idle
+            if (ui.container) {
+                ui.container.style.display = 'none';
             }
         }
 
@@ -586,17 +745,9 @@
         }
 
         // Update Volume Button
-        // Only show the volume button if there is active media, but maintain the mute state 
+        // Only show the volume button if there is active media, but maintain the mute state
         // in the background (tab-based mute).
-        if (myRole !== 'idle' && hasMedia) {
-            ui.volume.style.display = 'flex';
-            const volIcon = myIsMuted
-                ? `<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`
-                : `<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`;
-            ui.volume.innerHTML = volIcon;
-        } else {
-            ui.volume.style.display = 'none';
-        }
+        updateVolumeButton(hasMedia);
 
         // --- CONTEXT MENU ---
         // You can reorder these items to change the order in the menu.
@@ -614,9 +765,15 @@
         }
 
         if (myRole !== 'idle' || (myRole === 'idle' && GM_getValue(KEY_LATEST_SOURCE, null))) {
-            ui.menu.innerHTML = contextMenuItems.map(item =>
-                `<div class="stm-menu-item" data-action="${item.action}">${item.text}</div>`
-            ).join('');
+            ui.menu.innerHTML = `
+                <div role="menu" aria-label="Split View Menu">
+                    ${contextMenuItems.map(item =>
+                `<button role="menuitem" tabindex="0" data-action="${item.action}" class="stm-menu-item">
+                            ${item.text}
+                        </button>`
+            ).join('')}
+                </div>
+            `;
         }
     }
 
@@ -648,14 +805,21 @@
 
     // --- UI Movement Logic ---
     let isDraggingUI = false;
+    let dragStartX = 0;
     let dragStartY = 0;
+    let initialLeft = 0;
     let initialTop = 0;
+    let isHorizontalSwipe = false;
+    const SWIPE_THRESHOLD = 50; // Minimum horizontal movement to trigger swipe
 
     function handleGripMouseDown(e) {
         if (e.button !== 0) return;
         isDraggingUI = true;
+        dragStartX = e.clientX;
         dragStartY = e.clientY;
+        initialLeft = ui.container.offsetLeft;
         initialTop = ui.container.offsetTop;
+        isHorizontalSwipe = false;
 
         ui.grip.style.cursor = 'grabbing';
         document.addEventListener('mousemove', handleGripMouseMove);
@@ -665,7 +829,17 @@
 
     function handleGripMouseMove(e) {
         if (!isDraggingUI) return;
+        const deltaX = e.clientX - dragStartX;
         const deltaY = e.clientY - dragStartY;
+
+        // Check if this is a horizontal swipe gesture
+        if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > SWIPE_THRESHOLD) {
+            isHorizontalSwipe = true;
+            // Don't move the container during swipe detection
+            return;
+        }
+
+        // Regular vertical movement
         let newTop = initialTop + deltaY;
 
         // Boundary checks
@@ -676,15 +850,63 @@
         ui.container.style.top = `${newTop}px`;
     }
 
-    function handleGripMouseUp() {
+    function handleGripMouseUp(e) {
         if (!isDraggingUI) return;
         isDraggingUI = false;
         ui.grip.style.cursor = 'grab';
         document.removeEventListener('mousemove', handleGripMouseMove);
         document.removeEventListener('mouseup', handleGripMouseUp);
 
-        // Save position
-        GM_setValue(KEY_UI_POS, { top: ui.container.style.top });
+        // Handle horizontal swipe for side snapping
+        if (isHorizontalSwipe) {
+            const deltaX = e.clientX - dragStartX;
+            snapToSide(deltaX > 0 ? 'right' : 'left');
+        }
+
+        // Save position for current role
+        const currentPos = GM_getValue(KEY_UI_POS, {});
+        currentPos[myRole] = {
+            top: ui.container.style.top,
+            left: ui.container.style.left,
+            right: ui.container.style.right,
+            side: ui.container.classList.contains('stm-side-left') ? 'left' : 'right'
+        };
+        GM_setValue(KEY_UI_POS, currentPos);
+    }
+
+    function snapToSide(side) {
+        if (!ui || !ui.container) return;
+
+        const currentTop = ui.container.offsetTop;
+
+        // Remove existing side classes
+        ui.container.classList.remove('stm-side-left', 'stm-side-right');
+
+        // Apply new side class and positioning
+        if (side === 'left') {
+            ui.container.classList.add('stm-side-left');
+            ui.container.style.left = '0';
+            ui.container.style.right = 'auto';
+            ui.container.style.flexDirection = 'row-reverse';
+        } else {
+            ui.container.classList.add('stm-side-right');
+            ui.container.style.right = '0';
+            ui.container.style.left = 'auto';
+            ui.container.style.flexDirection = 'row';
+        }
+
+        // Pulse to indicate snap
+        pulseDot();
+
+        // Save new position with role-specific structure
+        const currentPos = GM_getValue(KEY_UI_POS, {});
+        currentPos[myRole] = {
+            top: `${currentTop}px`,
+            left: side === 'left' ? '0' : 'auto',
+            right: side === 'right' ? '0' : 'auto',
+            side: side
+        };
+        GM_setValue(KEY_UI_POS, currentPos);
     }
 
     /**
@@ -771,23 +993,111 @@
         }
     }
 
+    function updateVolumeButton(hasMedia) {
+        if (!ui || !ui.volume) return;
+
+        // Only show the volume button if there is active media, but maintain the mute state
+        // in the background (tab-based mute).
+        if (myRole !== 'idle' && hasMedia) {
+            ui.volume.style.display = 'flex';
+            const volIcon = myIsMuted
+                ? `<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`
+                : `<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`;
+            ui.volume.innerHTML = volIcon;
+        } else {
+            ui.volume.style.display = 'none';
+        }
+    }
+
     // --- Media Management (Volume/Mute) ---
     const mediaManager = {
         hasMedia: false,
         elements: new Set(),
+        iframes: new Set(),
         initialized: false,
+
+        // Known media iframe patterns and their postMessage configurations
+        iframeConfigs: {
+            youtube: {
+                patterns: [/youtube\.com\/embed/, /youtube-nocookie\.com\/embed/],
+                getMuteCommand: (muted) => JSON.stringify({
+                    event: 'command',
+                    func: muted ? 'mute' : 'unMute',
+                    args: []
+                }),
+                // YouTube requires enablejsapi=1 to receive commands
+                requiresApiParam: 'enablejsapi=1',
+                targetOrigin: 'https://www.youtube.com'
+            },
+            vimeo: {
+                patterns: [/player\.vimeo\.com\/video/],
+                getMuteCommand: (muted) => JSON.stringify({
+                    method: 'setVolume',
+                    value: muted ? 0 : 1
+                }),
+                targetOrigin: 'https://player.vimeo.com'
+            },
+            dailymotion: {
+                patterns: [/dailymotion\.com\/embed/],
+                getMuteCommand: (muted) => JSON.stringify({
+                    command: 'muted',
+                    parameters: [muted]
+                }),
+                targetOrigin: 'https://www.dailymotion.com'
+            },
+            twitch: {
+                patterns: [/player\.twitch\.tv/, /clips\.twitch\.tv/],
+                getMuteCommand: (muted) => JSON.stringify({
+                    eventName: 'setMuted',
+                    params: { muted: muted }
+                }),
+                targetOrigin: 'https://player.twitch.tv'
+            },
+            spotify: {
+                patterns: [/open\.spotify\.com\/embed/],
+                // Spotify embed doesn't have a postMessage API for muting
+                useFallback: true,
+                targetOrigin: 'https://open.spotify.com'
+            },
+            soundcloud: {
+                patterns: [/w\.soundcloud\.com\/player/],
+                getMuteCommand: (muted) => JSON.stringify({
+                    method: muted ? 'setVolume' : 'setVolume',
+                    value: muted ? 0 : 100
+                }),
+                targetOrigin: 'https://w.soundcloud.com'
+            },
+            facebook: {
+                patterns: [/facebook\.com\/plugins\/video/],
+                useFallback: true,
+                targetOrigin: 'https://www.facebook.com'
+            },
+            twitter: {
+                patterns: [/platform\.twitter\.com\/embed/, /twitter\.com\/i\/videos/],
+                useFallback: true,
+                targetOrigin: 'https://platform.twitter.com'
+            }
+        },
 
         init() {
             if (this.initialized) return;
             this.initialized = true;
             this.scan();
+            this.scanIframes();
             this.observe();
-            // Periodically check for playing state because 'play' event might be missed or not enough
-            setInterval(() => this.updateState(), 1000);
+            // Periodically check for playing state and new iframes
+            setInterval(() => {
+                this.updateState();
+                this.scanIframes();
+            }, 1000);
         },
 
         scan() {
             document.querySelectorAll('video, audio').forEach(el => this.track(el));
+        },
+
+        scanIframes() {
+            document.querySelectorAll('iframe').forEach(iframe => this.trackIframe(iframe));
         },
 
         track(el) {
@@ -803,14 +1113,113 @@
             el.muted = myIsMuted;
         },
 
+        trackIframe(iframe) {
+            if (this.iframes.has(iframe)) return;
+
+            const src = iframe.src || '';
+            if (!src) return;
+
+            // Check if this iframe matches any known media platform
+            let matchedConfig = null;
+            let configName = null;
+
+            for (const [name, config] of Object.entries(this.iframeConfigs)) {
+                for (const pattern of config.patterns) {
+                    if (pattern.test(src)) {
+                        matchedConfig = config;
+                        configName = name;
+                        break;
+                    }
+                }
+                if (matchedConfig) break;
+            }
+
+            if (matchedConfig) {
+                this.iframes.add(iframe);
+                iframe._stmConfig = matchedConfig;
+                iframe._stmConfigName = configName;
+
+                // Ensure YouTube iframes have enablejsapi=1
+                if (configName === 'youtube' && matchedConfig.requiresApiParam) {
+                    this.ensureYouTubeApiEnabled(iframe);
+                }
+
+                // Sync with current mute state
+                this.muteIframe(iframe, myIsMuted);
+
+                // Consider iframe as potential media source
+                this.hasMedia = true;
+                updateVolumeButton(true);
+            }
+        },
+
+        ensureYouTubeApiEnabled(iframe) {
+            const src = iframe.src || '';
+            if (!src.includes('enablejsapi=1')) {
+                const separator = src.includes('?') ? '&' : '?';
+                // Only modify if we can (same-origin or CORS allows)
+                try {
+                    iframe.src = src + separator + 'enablejsapi=1';
+                } catch (e) {
+                    console.log('[STM] Could not enable YouTube JS API:', e);
+                }
+            }
+        },
+
+        muteIframe(iframe, muted) {
+            const config = iframe._stmConfig;
+            if (!config) return;
+
+            if (config.useFallback) {
+                // Fallback: Try to access iframe content if same-origin
+                this.tryDirectIframeMute(iframe, muted);
+                return;
+            }
+
+            if (config.getMuteCommand) {
+                try {
+                    const message = config.getMuteCommand(muted);
+                    iframe.contentWindow?.postMessage(message, config.targetOrigin);
+
+                    // Also try with wildcard for cross-origin cases
+                    iframe.contentWindow?.postMessage(message, '*');
+                } catch (e) {
+                    console.log('[STM] postMessage failed for iframe:', e);
+                }
+            }
+        },
+
+        tryDirectIframeMute(iframe, muted) {
+            try {
+                // This only works for same-origin iframes
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+                if (iframeDoc) {
+                    iframeDoc.querySelectorAll('video, audio').forEach(el => {
+                        el.muted = muted;
+                    });
+                }
+            } catch (e) {
+                // Cross-origin iframe, can't access directly
+            }
+        },
+
+        muteAllIframes(muted) {
+            this.iframes.forEach(iframe => {
+                this.muteIframe(iframe, muted);
+            });
+        },
+
         observe() {
             const observer = new MutationObserver(mutations => {
                 for (const m of mutations) {
                     for (const node of m.addedNodes) {
                         if (node.nodeName === 'VIDEO' || node.nodeName === 'AUDIO') {
                             this.track(node);
+                        } else if (node.nodeName === 'IFRAME') {
+                            this.trackIframe(node);
                         } else if (node.querySelectorAll) {
                             node.querySelectorAll('video, audio').forEach(el => this.track(el));
+                            node.querySelectorAll('iframe').forEach(iframe => this.trackIframe(iframe));
                         }
                     }
                 }
@@ -819,15 +1228,19 @@
         },
 
         updateState() {
-            // Enforce mute state on all tracked elements if the tab is supposed to be muted.
-            // This prevents websites from programmatically unmuting themselves.
-            if (myIsMuted) {
+            // Enforce mute state on all tracked elements if the tab has a role.
+            // This prevents websites from programmatically changing their mute state.
+            if (myRole !== 'idle') {
                 this.elements.forEach(el => {
-                    if (!el.muted) el.muted = true;
+                    if (el.muted !== myIsMuted) el.muted = myIsMuted;
                 });
+                // Re-send mute commands to iframes periodically to ensure they stay in sync
+                this.muteAllIframes(myIsMuted);
             }
 
             let active = false;
+
+            // Check native video/audio elements
             for (const el of this.elements) {
                 // Consider it a "sound source" if it's playing and has volume
                 if (!el.paused && el.volume > 0 && !el.ended && el.readyState >= 2) {
@@ -836,14 +1249,32 @@
                 }
             }
 
+            // If we have tracked iframes, consider having media
+            if (!active && this.iframes.size > 0) {
+                active = true;
+            }
+
             if (active !== this.hasMedia) {
                 this.hasMedia = active;
-                updateUI();
+                updateVolumeButton(active);
             }
         },
 
         toggleMute() {
-            saveState(myRole, myId, myLastTs, mySourceTabId, !myIsMuted);
+            const newMutedState = !myIsMuted;
+
+            // Apply to all iframes immediately
+            this.muteAllIframes(newMutedState);
+
+            // Apply mute state to all tracked media elements
+            if (this.elements) {
+                this.elements.forEach(el => {
+                    el.muted = newMutedState;
+                });
+            }
+
+            // Save state and update UI
+            saveState(myRole, myId, myLastTs, mySourceTabId, newMutedState);
         }
     };
     function setRole(role, id = null, joinExisting = false) {
@@ -862,7 +1293,7 @@
             addSourceToGroup(groupId, sourceTabId);
             GM_setValue(KEY_LATEST_SOURCE, { sourceId: groupId, timestamp: Date.now() });
         } else if (role === 'target') {
-            if (!id) { GM_notification({ text: 'Cannot become Target without a Source ID.' }); return; }
+            if (!id) { Notify.error('Cannot become Target without a Source ID.'); return; }
             saveState('target', id);
         }
     }
@@ -1029,17 +1460,6 @@
             });
             activeListeners.push(urlListener);
 
-            // Listen for retargeting requests (when dragged to create new source)
-            const retargetListener = GM_addValueChangeListener(`${GM_PREFIX}retarget_${myId}`, (k, o, n) => {
-                if (n && n.newSourceId) {
-                    // Switch to the new source
-                    saveState('target', n.newSourceId);
-                    // Clean up the retarget request
-                    GM_deleteValue(`${GM_PREFIX}retarget_${myId}`);
-                }
-            });
-            activeListeners.push(retargetListener);
-
             // Initial Check for missed updates (Latency/Race condition fix)
             const serverTs = GM_getValue(getTimestampKey(myId), 0);
             if (serverTs > myLastTs) {
@@ -1064,16 +1484,17 @@
             const mergedId = myId || s.id;
             const mergedTs = myLastTs || s.lastTs;
             const mergedSourceTabId = mySourceTabId || s.sourceTabId;
-            const mergedIsMuted = myIsMuted || s.isMuted;
+
+            // For mute state, we trust the primed state if it has a role, 
+            // because window.name is updated synchronously and is more reliable 
+            // for same-tab navigation than the async GM_getTab.
+            const mergedIsMuted = (myRole !== 'idle') ? myIsMuted : s.isMuted;
+
             saveState(mergedRole, mergedId, mergedTs, mergedSourceTabId, mergedIsMuted);
             stateLoaded = true;
 
             // Initialize media manager after state is loaded
             mediaManager.init();
-
-            // Cleanup any stale interest keys from previous sessions
-            const staleInterests = GM_listValues().filter(k => k.startsWith(`${GM_PREFIX}interest_`));
-            staleInterests.forEach(k => GM_deleteValue(k));
 
             // --- Menu Configuration ---
             const menuCommands = [
@@ -1091,7 +1512,7 @@
                     e.preventDefault(); e.stopPropagation();
                     const l = GM_getValue(KEY_LATEST_SOURCE, null);
                     if (l) setRole('target', l.sourceId);
-                    else GM_notification({ text: 'No Source tab found.' });
+                    else Notify.warning('No Source tab found.');
                 }
             }, true);
 
@@ -1102,6 +1523,6 @@
 
     initialize();
 
-    console.log('Split Tab (Dev): Script initialized (v1.0.4)');
+    console.log('Enhanced Split Tab: Script initialized');
 
 })();
