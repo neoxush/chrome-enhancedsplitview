@@ -11,7 +11,9 @@ Browse and view content side by side with ease. Click links in one tab and see t
    - Open two browser windows/tabs
    - In first window: `CTRL` + **Middle-click** to set as **Source** (S)
    - In second window: `ALT` + **Middle-click** to set as **Target** (T)
+     OR Drag the **S** icon to an existing tab to set as **Target** (T)
 3. **Use**: Click links in Source to open them in Target
+4. **Pair more Tabs**: Drag the **T** (T) icon to another existing tab to set as **Source** (S)
 
 ## 🎯 Key Features
 
