@@ -15,52 +15,29 @@ Browse and view content side by side with ease. Click links in one tab and see t
 3. **Use**: Click links in Source to open them in Target
 4. **Pair more Tabs**: Drag the **T** (T) icon to another existing tab to set as **Source** (S)
 
+## 📝 Version History
+
+### v1.0.6 (Latest)
+- Enhanced notification system with better responsive sizing and text wrapping
+- Streamlined documentation and removed redundant sections
+- Persistent mute state across navigation
+- Fixed media controls
+
+[View all versions](https://github.com/neoxush/chrome-enhancedsplitview/commits/main)
+
 ## 🎯 Key Features
 
 - **Simple Controls**: Intuitive S (Source) and T (Target) indicators
 - **Flexible Layouts**: Works with Chrome's Split View, separate windows, or multiple monitors
 - **Media Controls**: Mute/unmute with `Ctrl+Alt+M`
-- **Persistent**: Maintains state across page refreshes
+- **Persistent**: Maintains state across page refreshes and navigation
 - **Customizable**: Change mouse shortcuts via Tampermonkey menu
-
-## 🖱️ How to Use
-
-### Basic Usage
-1. **Set Source Tab**
-   - Go to your starting page
-   - `CTRL` + **Middle-click** anywhere
-   - Look for the **S** icon (top-right)
-
-2. **Set Target Tab**
-   - Go to where you want links to open
-   - `ALT` + **Middle-click** anywhere
-   - Look for the **T** icon (top-left)
-
-3. **Start Browsing**
-   - Click any link in Source → Opens in Target
-   - Works with multiple Source tabs
-
-### Advanced Controls
-- **Pair Tabs**: Drag the **S** icon to a Target tab
-- **Revoke**: Right-click S/T icon → Revoke
-- **Disconnect**: Right-click S/T icon → Disconnect
-- **Reset All**: Tampermonkey menu → Reset Roles
 
 ## ⚙️ Configuration
 
 Customize in Tampermonkey → Configure Keys:
 - **Source**: `CTRL` + `Middle Mouse` (default)
 - **Target**: `ALT` + `Middle Mouse` (default)
-
-## 📝 Version History
-
-### v1.0.6 (Latest)
-- Enhanced notification system with better responsive sizing
-- Improved text wrapping in notifications for longer messages
-- Persistent mute state across navigation
-- Fixed media controls
-
-[View all versions](https://github.com/neoxush/chrome-enhancedsplitview/commits/main)
 
 ---
 
