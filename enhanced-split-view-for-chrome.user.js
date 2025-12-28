@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhanced Split View for Chrome
 // @namespace    http://tampermonkey.net/
-// @version      1.0.6
+// @version      1.0.7
 // @description  This scripts adds extra control over Chrome's native split view function, which allows to pin a source tab to open new content on the side.
 // @author       https://github.com/neoxush/VibeCoding/tree/master/browser-extensions/enhanced-split-view
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=google.com
@@ -134,7 +134,12 @@
     // Default configuration
     const DEFAULT_CONFIG = {
         sourceKey: { button: 1, ctrl: true, alt: false, shift: false },
-        targetKey: { button: 1, ctrl: false, alt: true, shift: false }
+        targetKey: { button: 1, ctrl: false, alt: true, shift: false },
+        notifications: {
+            newSourceRole: true,
+            newTargetRole: true,
+            revokeRole: true
+        }
     };
 
     // --- State Management ---
@@ -150,7 +155,7 @@
     let configPanel = null;
     let activeListeners = [];
     let config = null;
-    
+
     // --- Lazyload Mute Control ---
     let muteLazyloadActivated = false;
 
@@ -185,11 +190,11 @@
     // Lazyload activation function (one-time per tab/role)
     function activateMuteLazyload() {
         if (muteLazyloadActivated) return;
-        
+
         muteLazyloadActivated = true;
         saveMuteLazyloadState();
-        Notify.info('Mute control activated - Extension will now manage audio state for this tab');
-        
+        Notify.info('Mute control activated');
+
         // Apply current mute state to all media elements immediately
         if (mediaManager) {
             if (mediaManager.elements) {
@@ -201,7 +206,7 @@
                 mediaManager.muteAllIframes(myIsMuted);
             }
         }
-        
+
         updateUI(); // Update UI to show active volume button
     }
 
@@ -242,6 +247,10 @@
     function saveConfig(newConfig) {
         config = newConfig;
         GM_setValue(KEY_CONFIG, config);
+        // Reattach listeners with new configuration
+        if (myRole !== 'idle' && myId) {
+            attachRoleSpecificListeners();
+        }
     }
 
     function saveState(role, id, lastTs = 0, sourceTabId = null, isMuted = null) {
@@ -537,7 +546,7 @@
         const panel = document.createElement('div');
         panel.id = 'stm-config-panel';
         panel.innerHTML = `
-            <h3>Split Tab Manager - Key Configuration</h3>
+            <h3>Preference</h3>
             <div class="stm-config-section">
                 <h4>Create Source Tab</h4>
                 <div class="stm-config-row">
@@ -580,6 +589,27 @@
                     </div>
                 </div>
             </div>
+            <div class="stm-config-section">
+                <h4>Notifications</h4>
+                <div class="stm-config-row">
+                    <div class="stm-config-label">Source Role:</div>
+                    <div class="stm-config-input">
+                        <label for="stm-notify-new-source"><input type="checkbox" id="stm-notify-new-source"> Notify when new source tab joins</label>
+                    </div>
+                </div>
+                <div class="stm-config-row">
+                    <div class="stm-config-label">Target Role:</div>
+                    <div class="stm-config-input">
+                        <label for="stm-notify-new-target"><input type="checkbox" id="stm-notify-new-target"> Notify when new target tab joins</label>
+                    </div>
+                </div>
+                <div class="stm-config-row">
+                    <div class="stm-config-label">Revoke Role:</div>
+                    <div class="stm-config-input">
+                        <label for="stm-notify-revoke"><input type="checkbox" id="stm-notify-revoke"> Notify when a tab revokes its role</label>
+                    </div>
+                </div>
+            </div>
             <div class="stm-config-buttons">
                 <button class="stm-config-btn stm-config-btn-reset" id="stm-config-reset">Reset to Default</button>
                 <button class="stm-config-btn stm-config-btn-cancel" id="stm-config-cancel">Cancel</button>
@@ -605,6 +635,13 @@
         document.getElementById('stm-target-ctrl').checked = config.targetKey.ctrl;
         document.getElementById('stm-target-alt').checked = config.targetKey.alt;
         document.getElementById('stm-target-shift').checked = config.targetKey.shift;
+
+        // Load notification settings
+        const notifications = config.notifications || { newSourceRole: true, newTargetRole: true, revokeRole: true };
+        document.getElementById('stm-notify-new-source').checked = notifications.newSourceRole;
+        document.getElementById('stm-notify-new-target').checked = notifications.newTargetRole;
+        document.getElementById('stm-notify-revoke').checked = notifications.revokeRole;
+
         configPanel.overlay.style.display = 'block';
         configPanel.panel.style.display = 'block';
     }
@@ -619,7 +656,12 @@
     function saveConfigFromPanel() {
         const newConfig = {
             sourceKey: { button: parseInt(document.getElementById('stm-source-button').value), ctrl: document.getElementById('stm-source-ctrl').checked, alt: document.getElementById('stm-source-alt').checked, shift: document.getElementById('stm-source-shift').checked },
-            targetKey: { button: parseInt(document.getElementById('stm-target-button').value), ctrl: document.getElementById('stm-target-ctrl').checked, alt: document.getElementById('stm-target-alt').checked, shift: document.getElementById('stm-target-shift').checked }
+            targetKey: { button: parseInt(document.getElementById('stm-target-button').value), ctrl: document.getElementById('stm-target-ctrl').checked, alt: document.getElementById('stm-target-alt').checked, shift: document.getElementById('stm-target-shift').checked },
+            notifications: {
+                newSourceRole: document.getElementById('stm-notify-new-source').checked,
+                newTargetRole: document.getElementById('stm-notify-new-target').checked,
+                revokeRole: document.getElementById('stm-notify-revoke').checked
+            }
         };
         saveConfig(newConfig);
         hideConfigPanel();
@@ -641,7 +683,7 @@
         const sourcesPrefix = `${GM_PREFIX}sources_`;
         const mutePrefix = `${GM_PREFIX}mute_`;
         const lazyloadPrefix = `${GM_PREFIX}lazyload_`;
-        
+
         keys.forEach(k => {
             if (k.startsWith(urlPrefix)) ids.add(k.slice(urlPrefix.length));
             else if (k.startsWith(tsPrefix)) ids.add(k.slice(tsPrefix.length));
@@ -1075,7 +1117,7 @@
         // Show different icons and styles for sleep vs active modes
         if (myRole !== 'idle' && hasMedia) {
             ui.volume.style.display = 'flex';
-            
+
             if (!muteLazyloadActivated) {
                 // Sleep mode - show activation icon with visual indicator
                 ui.volume.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>`;
@@ -1355,7 +1397,7 @@
             if (!muteLazyloadActivated) {
                 activateMuteLazyload();
             }
-            
+
             const newMutedState = !myIsMuted;
             myIsMuted = newMutedState;
             saveTabMuteState(); // Save tab-specific mute state
@@ -1383,14 +1425,14 @@
             timestamp: Date.now(),
             type: 'role_joined'
         };
-        
+
         // Set notification for the group ID so all tabs can see it
         GM_setValue(getRoleNotificationKey(groupId), notification);
-        
+
         // Also set a general notification key for broader visibility
         GM_setValue(`${GM_PREFIX}latest_role_notification`, notification);
     }
-    
+
     function setRole(role, id = null, joinExisting = false) {
         if (role === 'source') {
             let groupId;
@@ -1408,7 +1450,7 @@
             saveState('source', groupId, 0, sourceTabId);
             addSourceToGroup(groupId, sourceTabId);
             GM_setValue(KEY_LATEST_SOURCE, { sourceId: groupId, timestamp: Date.now() });
-            
+
             // Broadcast notification for new source if not joining existing
             if (!joinExisting) {
                 broadcastRoleNotification(groupId, 'source', myInstanceId);
@@ -1425,7 +1467,7 @@
         if (myRole === 'source' && myId && mySourceTabId) {
             removeSourceFromGroup(myId, mySourceTabId);
         }
-        
+
         // Broadcast disconnection notification
         if (myRole !== 'idle' && myId) {
             const notification = {
@@ -1438,7 +1480,7 @@
             GM_setValue(getRoleNotificationKey(myId), notification);
             GM_setValue(`${GM_PREFIX}latest_role_notification`, notification);
         }
-        
+
         // Clean up tab-specific storage when revoking role
         if (myRole !== 'idle' && myId) {
             GM_deleteValue(getMuteStateKey(myId, myRole));
@@ -1455,7 +1497,7 @@
         if (myId) {
             GM_setValue(getDisconnectKey(myId), Date.now());
         }
-        
+
         // Broadcast disconnection notification
         if (myRole !== 'idle' && myId) {
             const notification = {
@@ -1468,7 +1510,7 @@
             GM_setValue(getRoleNotificationKey(myId), notification);
             GM_setValue(`${GM_PREFIX}latest_role_notification`, notification);
         }
-        
+
         // Clean up tab-specific storage when disconnecting
         if (myRole !== 'idle' && myId) {
             GM_deleteValue(getMuteStateKey(myId, myRole));
@@ -1609,31 +1651,41 @@
 
         const globalResetListener = GM_addValueChangeListener(KEY_GLOBAL_RESET, (k, o, n, r) => { if (r) saveState('idle', null, 0, null); });
         activeListeners.push(globalResetListener);
-        
+
         // Listen for role notifications in the same connection
         if (myId) {
             const roleNotificationListener = GM_addValueChangeListener(getRoleNotificationKey(myId), (k, o, n, r) => {
                 if (r && n && n.tabId !== myInstanceId) {
+                    const notifications = config.notifications || { newSourceRole: true, newTargetRole: true, revokeRole: true };
+
                     if (n.type === 'role_joined') {
-                        const roleText = n.newRole === 'source' ? 'Source' : 'Target';
-                        Notify.info(`New ${roleText} tab joined the connection`, 'Role Update');
-                    } else if (n.type === 'role_disconnected') {
+                        if (n.newRole === 'source' && notifications.newSourceRole) {
+                            Notify.info('New Source tab joined', 'Role Update');
+                        } else if (n.newRole === 'target' && notifications.newTargetRole) {
+                            Notify.info('New Target tab joined', 'Role Update');
+                        }
+                    } else if (n.type === 'role_disconnected' && notifications.revokeRole) {
                         const roleText = n.disconnectedRole === 'source' ? 'Source' : 'Target';
-                        Notify.warning(`${roleText} tab disconnected from the connection`, 'Role Update');
+                        Notify.warning(`${roleText} tab revoked its role`, 'Role Update');
                     }
                 }
             });
             activeListeners.push(roleNotificationListener);
-            
+
             // Also listen for general role notifications
             const generalRoleListener = GM_addValueChangeListener(`${GM_PREFIX}latest_role_notification`, (k, o, n, r) => {
                 if (r && n && n.tabId !== myInstanceId && n.groupId === myId) {
+                    const notifications = config.notifications || { newSourceRole: true, newTargetRole: true, revokeRole: true };
+
                     if (n.type === 'role_joined') {
-                        const roleText = n.newRole === 'source' ? 'Source' : 'Target';
-                        Notify.info(`New ${roleText} tab joined the connection`, 'Role Update');
-                    } else if (n.type === 'role_disconnected') {
+                        if (n.newRole === 'source' && notifications.newSourceRole) {
+                            Notify.info('New Source tab joined', 'Role Update');
+                        } else if (n.newRole === 'target' && notifications.newTargetRole) {
+                            Notify.info('New Target tab joined', 'Role Update');
+                        }
+                    } else if (n.type === 'role_disconnected' && notifications.revokeRole) {
                         const roleText = n.disconnectedRole === 'source' ? 'Source' : 'Target';
-                        Notify.warning(`${roleText} tab disconnected from the connection`, 'Role Update');
+                        Notify.warning(`${roleText} tab revoked its role`, 'Role Update');
                     }
                 }
             });
@@ -1666,6 +1718,17 @@
         loadMuteLazyloadState(); // Load persistent lazyload state
         injectStyles();
         primeStateFromWindowName();
+
+        // Listen for configuration changes to update notification settings
+        GM_addValueChangeListener(KEY_CONFIG, (key, oldValue, newValue, remote) => {
+            if (remote) {
+                config = newValue || DEFAULT_CONFIG;
+                // Reattach listeners with new configuration
+                if (myRole !== 'idle' && myId) {
+                    attachRoleSpecificListeners();
+                }
+            }
+        });
         // Attach link interception immediately so early clicks are captured even before state restore completes.
         window.addEventListener('click', handleLinkClick, true);
 
@@ -1690,8 +1753,8 @@
             // --- Menu Configuration ---
             const menuCommands = [
                 { name: "Create Source", func: () => setRole('source') },
-                { name: "Configure Keys", func: showConfigPanel },
-                { name: "Reset Roles", func: resetAllRoles }
+                { name: "Reset Roles", func: resetAllRoles },
+                { name: "Preference", func: showConfigPanel }
             ];
             menuCommands.forEach(cmd => GM_registerMenuCommand(cmd.name, cmd.func));
 

@@ -17,9 +17,16 @@ Browse and view content side by side with ease. Click links in one tab and see t
 
 ## 📝 Version History
 
-### v1.0.6 (Latest)
-- Enhanced notification system with better responsive sizing and text wrapping
+### v1.0.7 (Latest)
+- Updated to latest version with enhanced functionality
+- Improved notification system with better responsive sizing and text wrapping
 - Streamlined documentation and removed redundant sections
+- Persistent mute state across navigation
+- Fixed media controls
+
+### v1.0.6
+- Enhanced notification system with better responsive sizing
+- Improved text wrapping in notifications for longer messages
 - Persistent mute state across navigation
 - Fixed media controls
 
