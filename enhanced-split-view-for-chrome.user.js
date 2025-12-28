@@ -34,7 +34,9 @@
                 padding: 12px 20px;
                 border-radius: 6px;
                 color: white;
-                max-width: 320px;
+                min-width: 200px;
+                max-width: 500px;
+                width: fit-content;
                 z-index: 9999;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                 transform: translateX(120%);
@@ -62,8 +64,8 @@
             notification.innerHTML = `
                 <span style="margin-right: 12px; font-size: 18px; flex-shrink: 0;">${icon}</span>
                 <div style="flex: 1;">
-                    ${title ? `<div style="font-weight: 600; margin: 0 0 4px 0; font-size: 14px;">${title}</div>` : ''}
-                    <div style="margin: 0; font-size: 13px; opacity: 0.9; line-height: 1.4;">${message}</div>
+                    ${title ? `<div style="font-weight: 600; margin: 0 0 4px 0; font-size: 14px; word-wrap: break-word; overflow-wrap: break-word;">${title}</div>` : ''}
+                    <div style="margin: 0; font-size: 13px; opacity: 0.9; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">${message}</div>
                 </div>
                 <span class="esv-notification-close" style="margin-left: 12px; cursor: pointer; opacity: 0.7; font-size: 16px; line-height: 1; transition: opacity 0.2s;" title="Dismiss">&times;</span>
             `;
@@ -120,10 +122,14 @@
     const KEY_CONFIG = `${GM_PREFIX}config`;
     const KEY_GLOBAL_RESET = `${GM_PREFIX}global_reset`;
     const KEY_UI_POS = `${GM_PREFIX}ui_pos`;
+    const KEY_MUTE_LAZYLOAD = `${GM_PREFIX}mute_lazyload_activated`;
+    const getMuteStateKey = (id, role) => `${GM_PREFIX}mute_${role}_${id}`;
+    const getLazyloadKey = (id, role) => `${GM_PREFIX}lazyload_${role}_${id}`;
     const getTargetUrlKey = (id) => `${GM_PREFIX}url_${id}`;
     const getTimestampKey = (id) => `${GM_PREFIX}ts_${id}`;
     const getDisconnectKey = (id) => `${GM_PREFIX}disconnect_${id}`;
     const getSourceListKey = (id) => `${GM_PREFIX}sources_${id}`;
+    const getRoleNotificationKey = (id) => `${GM_PREFIX}role_notification_${id}`;
 
     // Default configuration
     const DEFAULT_CONFIG = {
@@ -144,6 +150,60 @@
     let configPanel = null;
     let activeListeners = [];
     let config = null;
+    
+    // --- Lazyload Mute Control ---
+    let muteLazyloadActivated = false;
+
+    // Load persistent lazyload state for current tab/role
+    function loadMuteLazyloadState() {
+        if (myRole !== 'idle' && myId) {
+            muteLazyloadActivated = GM_getValue(getLazyloadKey(myId, myRole), false);
+        }
+    }
+
+    // Save persistent lazyload state for current tab/role
+    function saveMuteLazyloadState() {
+        if (myRole !== 'idle' && myId) {
+            GM_setValue(getLazyloadKey(myId, myRole), muteLazyloadActivated);
+        }
+    }
+
+    // Load tab-specific mute state
+    function loadTabMuteState() {
+        if (myRole !== 'idle' && myId) {
+            myIsMuted = GM_getValue(getMuteStateKey(myId, myRole), false);
+        }
+    }
+
+    // Save tab-specific mute state
+    function saveTabMuteState() {
+        if (myRole !== 'idle' && myId) {
+            GM_setValue(getMuteStateKey(myId, myRole), myIsMuted);
+        }
+    }
+
+    // Lazyload activation function (one-time per tab/role)
+    function activateMuteLazyload() {
+        if (muteLazyloadActivated) return;
+        
+        muteLazyloadActivated = true;
+        saveMuteLazyloadState();
+        Notify.info('Mute control activated - Extension will now manage audio state for this tab');
+        
+        // Apply current mute state to all media elements immediately
+        if (mediaManager) {
+            if (mediaManager.elements) {
+                mediaManager.elements.forEach(el => {
+                    el.muted = myIsMuted;
+                });
+            }
+            if (mediaManager.muteAllIframes) {
+                mediaManager.muteAllIframes(myIsMuted);
+            }
+        }
+        
+        updateUI(); // Update UI to show active volume button
+    }
 
     // Lightweight, synchronous prime from window.name so navigation retains role/id even before async loadState finishes.
     function primeStateFromWindowName() {
@@ -167,7 +227,8 @@
                 myId = parsed.stmId;
                 myLastTs = parsed.stmLastTs || 0;
                 mySourceTabId = parsed.stmSourceTabId;
-                myIsMuted = parsed.stmIsMuted || false;
+                loadTabMuteState(); // Load tab-specific mute state
+                loadMuteLazyloadState(); // Load tab-specific lazyload state
                 updateUI();
                 attachRoleSpecificListeners();
             }
@@ -192,10 +253,11 @@
             myIsMuted = false;
         } else if (isMuted !== null) {
             myIsMuted = isMuted;
+            saveTabMuteState(); // Save tab-specific mute state
         }
 
-        // Apply mute state to all tracked media elements
-        if (mediaManager) {
+        // Apply mute state to all tracked media elements only if lazyload is activated
+        if (mediaManager && muteLazyloadActivated) {
             if (mediaManager.elements) {
                 mediaManager.elements.forEach(el => {
                     el.muted = myIsMuted;
@@ -270,7 +332,7 @@
                         id: tab.id,
                         lastTs: tab.lastTs || 0,
                         sourceTabId: tab.sourceTabId,
-                        isMuted: tab.isMuted || false
+                        isMuted: GM_getValue(getMuteStateKey(tab.id, tab.role), false)
                     });
                     return;
                 }
@@ -283,7 +345,7 @@
                             id: parsed.stmId,
                             lastTs: parsed.stmLastTs || 0,
                             sourceTabId: parsed.stmSourceTabId,
-                            isMuted: parsed.stmIsMuted || false
+                            isMuted: GM_getValue(getMuteStateKey(parsed.stmId, parsed.stmRole), false)
                         });
                         return;
                     }
@@ -297,7 +359,7 @@
                             id: parsed.stmId,
                             lastTs: parsed.stmLastTs || 0,
                             sourceTabId: parsed.stmSourceTabId,
-                            isMuted: parsed.stmIsMuted || false
+                            isMuted: GM_getValue(getMuteStateKey(parsed.stmId, parsed.stmRole), false)
                         });
                         return;
                     }
@@ -577,11 +639,18 @@
         const tsPrefix = `${GM_PREFIX}ts_`;
         const disconnectPrefix = `${GM_PREFIX}disconnect_`;
         const sourcesPrefix = `${GM_PREFIX}sources_`;
+        const mutePrefix = `${GM_PREFIX}mute_`;
+        const lazyloadPrefix = `${GM_PREFIX}lazyload_`;
+        
         keys.forEach(k => {
             if (k.startsWith(urlPrefix)) ids.add(k.slice(urlPrefix.length));
             else if (k.startsWith(tsPrefix)) ids.add(k.slice(tsPrefix.length));
             else if (k.startsWith(disconnectPrefix)) ids.add(k.slice(disconnectPrefix.length));
             else if (k.startsWith(sourcesPrefix)) ids.add(k.slice(sourcesPrefix.length));
+            else if (k.startsWith(mutePrefix) || k.startsWith(lazyloadPrefix)) {
+                // Remove tab-specific mute and lazyload states
+                GM_deleteValue(k);
+            }
         });
 
         // Also check the latest source key
@@ -704,7 +773,13 @@
             ui.dot.addEventListener('drop', handleLinkDrop);
 
             ui.menu.addEventListener('click', handleMenuClick);
-            ui.volume.addEventListener('click', () => mediaManager.toggleMute());
+            ui.volume.addEventListener('click', () => {
+                if (!muteLazyloadActivated) {
+                    activateMuteLazyload();
+                } else {
+                    mediaManager.toggleMute();
+                }
+            });
             window.addEventListener('click', (e) => {
                 if (ui && ui.menu.style.display === 'block' && !ui.container.contains(e.target)) {
                     toggleMenu();
@@ -996,14 +1071,25 @@
     function updateVolumeButton(hasMedia) {
         if (!ui || !ui.volume) return;
 
-        // Only show the volume button if there is active media, but maintain the mute state
-        // in the background (tab-based mute).
+        // Always show volume button when there is active media and tab has a role
+        // Show different icons and styles for sleep vs active modes
         if (myRole !== 'idle' && hasMedia) {
             ui.volume.style.display = 'flex';
-            const volIcon = myIsMuted
-                ? `<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`
-                : `<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`;
-            ui.volume.innerHTML = volIcon;
+            
+            if (!muteLazyloadActivated) {
+                // Sleep mode - show activation icon with visual indicator
+                ui.volume.innerHTML = `<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>`;
+                ui.volume.style.background = 'rgba(255, 193, 7, 0.2)'; // Amber background for sleep mode
+                ui.volume.title = 'Click to activate mute control (currently in sleep mode)';
+            } else {
+                // Active mode - show normal volume icons
+                ui.volume.style.background = 'rgba(255, 255, 255, 0.1)'; // Normal background
+                const volIcon = myIsMuted
+                    ? `<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`
+                    : `<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`;
+                ui.volume.innerHTML = volIcon;
+                ui.volume.title = myIsMuted ? 'Click to unmute' : 'Click to mute';
+            }
         } else {
             ui.volume.style.display = 'none';
         }
@@ -1109,8 +1195,10 @@
             el.addEventListener('pause', update);
             el.addEventListener('volumechange', update);
 
-            // Sync with current mute state
-            el.muted = myIsMuted;
+            // Sync with current mute state only if lazyload is activated
+            if (muteLazyloadActivated) {
+                el.muted = myIsMuted;
+            }
         },
 
         trackIframe(iframe) {
@@ -1144,8 +1232,10 @@
                     this.ensureYouTubeApiEnabled(iframe);
                 }
 
-                // Sync with current mute state
-                this.muteIframe(iframe, myIsMuted);
+                // Sync with current mute state only if lazyload is activated
+                if (muteLazyloadActivated) {
+                    this.muteIframe(iframe, myIsMuted);
+                }
 
                 // Consider iframe as potential media source
                 this.hasMedia = true;
@@ -1228,9 +1318,9 @@
         },
 
         updateState() {
-            // Enforce mute state on all tracked elements if the tab has a role.
+            // Enforce mute state on all tracked elements if the tab has a role AND lazyload is activated
             // This prevents websites from programmatically changing their mute state.
-            if (myRole !== 'idle') {
+            if (myRole !== 'idle' && muteLazyloadActivated) {
                 this.elements.forEach(el => {
                     if (el.muted !== myIsMuted) el.muted = myIsMuted;
                 });
@@ -1261,7 +1351,14 @@
         },
 
         toggleMute() {
+            // Auto-activate lazyload on first mute toggle
+            if (!muteLazyloadActivated) {
+                activateMuteLazyload();
+            }
+            
             const newMutedState = !myIsMuted;
+            myIsMuted = newMutedState;
+            saveTabMuteState(); // Save tab-specific mute state
 
             // Apply to all iframes immediately
             this.muteAllIframes(newMutedState);
@@ -1277,12 +1374,31 @@
             saveState(myRole, myId, myLastTs, mySourceTabId, newMutedState);
         }
     };
+    // Broadcast role notification to all tabs in the same connection
+    function broadcastRoleNotification(groupId, newRole, tabId) {
+        const notification = {
+            groupId: groupId,
+            newRole: newRole,
+            tabId: tabId,
+            timestamp: Date.now(),
+            type: 'role_joined'
+        };
+        
+        // Set notification for the group ID so all tabs can see it
+        GM_setValue(getRoleNotificationKey(groupId), notification);
+        
+        // Also set a general notification key for broader visibility
+        GM_setValue(`${GM_PREFIX}latest_role_notification`, notification);
+    }
+    
     function setRole(role, id = null, joinExisting = false) {
         if (role === 'source') {
             let groupId;
             if (joinExisting && id) {
                 // Join existing group
                 groupId = id;
+                // Broadcast notification when joining existing group
+                broadcastRoleNotification(groupId, 'source', myInstanceId);
             } else {
                 // Create new group or use provided ID
                 groupId = id || generateId();
@@ -1292,15 +1408,41 @@
             saveState('source', groupId, 0, sourceTabId);
             addSourceToGroup(groupId, sourceTabId);
             GM_setValue(KEY_LATEST_SOURCE, { sourceId: groupId, timestamp: Date.now() });
+            
+            // Broadcast notification for new source if not joining existing
+            if (!joinExisting) {
+                broadcastRoleNotification(groupId, 'source', myInstanceId);
+            }
         } else if (role === 'target') {
             if (!id) { Notify.error('Cannot become Target without a Source ID.'); return; }
             saveState('target', id);
+            // Broadcast notification when target joins
+            broadcastRoleNotification(id, 'target', myInstanceId);
         }
     }
     // Disconnects just this tab, leaving the other tab in its role.
     function revokeRole() {
         if (myRole === 'source' && myId && mySourceTabId) {
             removeSourceFromGroup(myId, mySourceTabId);
+        }
+        
+        // Broadcast disconnection notification
+        if (myRole !== 'idle' && myId) {
+            const notification = {
+                groupId: myId,
+                disconnectedRole: myRole,
+                tabId: myInstanceId,
+                timestamp: Date.now(),
+                type: 'role_disconnected'
+            };
+            GM_setValue(getRoleNotificationKey(myId), notification);
+            GM_setValue(`${GM_PREFIX}latest_role_notification`, notification);
+        }
+        
+        // Clean up tab-specific storage when revoking role
+        if (myRole !== 'idle' && myId) {
+            GM_deleteValue(getMuteStateKey(myId, myRole));
+            GM_deleteValue(getLazyloadKey(myId, myRole));
         }
         saveState('idle', null, 0, null);
     }
@@ -1312,8 +1454,27 @@
         }
         if (myId) {
             GM_setValue(getDisconnectKey(myId), Date.now());
-            saveState('idle', null, 0, null);
         }
+        
+        // Broadcast disconnection notification
+        if (myRole !== 'idle' && myId) {
+            const notification = {
+                groupId: myId,
+                disconnectedRole: myRole,
+                tabId: myInstanceId,
+                timestamp: Date.now(),
+                type: 'role_disconnected'
+            };
+            GM_setValue(getRoleNotificationKey(myId), notification);
+            GM_setValue(`${GM_PREFIX}latest_role_notification`, notification);
+        }
+        
+        // Clean up tab-specific storage when disconnecting
+        if (myRole !== 'idle' && myId) {
+            GM_deleteValue(getMuteStateKey(myId, myRole));
+            GM_deleteValue(getLazyloadKey(myId, myRole));
+        }
+        saveState('idle', null, 0, null);
     }
 
     function handleLinkDragOver(e) {
@@ -1448,6 +1609,36 @@
 
         const globalResetListener = GM_addValueChangeListener(KEY_GLOBAL_RESET, (k, o, n, r) => { if (r) saveState('idle', null, 0, null); });
         activeListeners.push(globalResetListener);
+        
+        // Listen for role notifications in the same connection
+        if (myId) {
+            const roleNotificationListener = GM_addValueChangeListener(getRoleNotificationKey(myId), (k, o, n, r) => {
+                if (r && n && n.tabId !== myInstanceId) {
+                    if (n.type === 'role_joined') {
+                        const roleText = n.newRole === 'source' ? 'Source' : 'Target';
+                        Notify.info(`New ${roleText} tab joined the connection`, 'Role Update');
+                    } else if (n.type === 'role_disconnected') {
+                        const roleText = n.disconnectedRole === 'source' ? 'Source' : 'Target';
+                        Notify.warning(`${roleText} tab disconnected from the connection`, 'Role Update');
+                    }
+                }
+            });
+            activeListeners.push(roleNotificationListener);
+            
+            // Also listen for general role notifications
+            const generalRoleListener = GM_addValueChangeListener(`${GM_PREFIX}latest_role_notification`, (k, o, n, r) => {
+                if (r && n && n.tabId !== myInstanceId && n.groupId === myId) {
+                    if (n.type === 'role_joined') {
+                        const roleText = n.newRole === 'source' ? 'Source' : 'Target';
+                        Notify.info(`New ${roleText} tab joined the connection`, 'Role Update');
+                    } else if (n.type === 'role_disconnected') {
+                        const roleText = n.disconnectedRole === 'source' ? 'Source' : 'Target';
+                        Notify.warning(`${roleText} tab disconnected from the connection`, 'Role Update');
+                    }
+                }
+            });
+            activeListeners.push(generalRoleListener);
+        }
         if (myRole === 'target') {
             // Some managers may not flag `remote` reliably; rely on timestamp monotonicity instead.
             const urlListener = GM_addValueChangeListener(getTimestampKey(myId), (k, o, n) => {
@@ -1472,6 +1663,7 @@
 
     function initialize() {
         loadConfig();
+        loadMuteLazyloadState(); // Load persistent lazyload state
         injectStyles();
         primeStateFromWindowName();
         // Attach link interception immediately so early clicks are captured even before state restore completes.
@@ -1485,12 +1677,11 @@
             const mergedTs = myLastTs || s.lastTs;
             const mergedSourceTabId = mySourceTabId || s.sourceTabId;
 
-            // For mute state, we trust the primed state if it has a role, 
-            // because window.name is updated synchronously and is more reliable 
-            // for same-tab navigation than the async GM_getTab.
-            const mergedIsMuted = (myRole !== 'idle') ? myIsMuted : s.isMuted;
+            // For mute state, load from tab-specific storage
+            loadTabMuteState();
+            loadMuteLazyloadState();
 
-            saveState(mergedRole, mergedId, mergedTs, mergedSourceTabId, mergedIsMuted);
+            saveState(mergedRole, mergedId, mergedTs, mergedSourceTabId, myIsMuted);
             stateLoaded = true;
 
             // Initialize media manager after state is loaded

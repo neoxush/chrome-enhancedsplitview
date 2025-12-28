@@ -55,6 +55,8 @@ Customize in Tampermonkey → Configure Keys:
 ## 📝 Version History
 
 ### v1.0.6 (Latest)
+- Enhanced notification system with better responsive sizing
+- Improved text wrapping in notifications for longer messages
 - Persistent mute state across navigation
 - Fixed media controls
 
