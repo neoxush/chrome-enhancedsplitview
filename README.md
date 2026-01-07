@@ -13,32 +13,34 @@ Browse and view content side by side with ease. Click links in one tab and see t
    - In second window: `ALT` + **Middle-click** to set as **Target** (T)
      OR Drag the **S** icon to an existing tab to set as **Target** (T)
 3. **Use**: Click links in Source to open them in Target
-4. **Pair more Tabs**: Drag the **T** (T) icon to another existing tab to set as **Source** (S)
+4. **Playlist Mode**: Double-click the **T** icon to enter playlist mode, then use mini controls to navigate between links
+5. **Pair more Tabs**: Drag the **T** (T) icon to another existing tab to set as **Source** (S)
 
 ## 📝 Version History
 
-### v1.0.7 (Latest)
-- Updated to latest version with enhanced functionality
-- Improved notification system with better responsive sizing and text wrapping
-- Streamlined documentation and removed redundant sections
-- Persistent mute state across navigation
-- Fixed media controls
-
-### v1.0.6
-- Enhanced notification system with better responsive sizing
-- Improved text wrapping in notifications for longer messages
-- Persistent mute state across navigation
-- Fixed media controls
+### v1.0.8 (Latest)
+- **New Playlist Feature**: Double-click target tab to enter playlist mode for managing multiple links
+- **Playlist Sharing**: Share your playlist with others or export/import playlists for later use
+- **Enhanced Media Controls**: Improved lazyload mute system with persistent state across sessions
+- **Better UI**: Added mini playlist controls with previous/next navigation
+- **Improved Notifications**: Modern notification system with better responsive design and text wrapping
+- **Enhanced State Management**: More robust tab state persistence across navigation
+- **Fullscreen Support**: UI automatically hides/shows based on fullscreen state
+- **SPA Improvements**: Better support for single-page applications like YouTube
 
 [View all versions](https://github.com/neoxush/chrome-enhancedsplitview/commits/main)
 
 ## 🎯 Key Features
 
 - **Simple Controls**: Intuitive S (Source) and T (Target) indicators
+- **Playlist Mode**: Double-click target tabs to manage multiple links with playlist controls
+- **Playlist Sharing**: Export and share playlists with others or import playlists for later use
 - **Flexible Layouts**: Works with Chrome's Split View, separate windows, or multiple monitors
-- **Media Controls**: Mute/unmute with `Ctrl+Alt+M`
+- **Media Controls**: Mute/unmute with `Ctrl+Alt+M` and persistent mute state
+- **Smart UI**: Auto-hides in fullscreen, responsive design with modern notifications
 - **Persistent**: Maintains state across page refreshes and navigation
 - **Customizable**: Change mouse shortcuts via Tampermonkey menu
+- **SPA Support**: Enhanced compatibility with single-page applications
 
 ## ⚙️ Configuration
 

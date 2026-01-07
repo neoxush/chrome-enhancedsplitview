@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhanced Split View for Chrome
 // @namespace    http://tampermonkey.net/
-// @version      1.0.7
+// @version      1.0.8
 // @description  This scripts adds extra control over Chrome's native split view function, which allows to pin a source tab to open new content on the side.
 // @author       https://github.com/neoxush/VibeCoding/tree/master/browser-extensions/enhanced-split-view
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=google.com
@@ -23,8 +23,28 @@
     'use strict';
 
     // --- Modern Notification System ---
+    const ttPolicy = (function () {
+        if (window.trustedTypes && window.trustedTypes.createPolicy) {
+            try {
+                return window.trustedTypes.createPolicy('stmPolicy', {
+                    createHTML: (s) => s,
+                    createScript: (s) => s,
+                    createScriptURL: (s) => s
+                });
+            } catch (e) {
+                console.warn('Split View: Trusted Types policy creation failed', e);
+            }
+        }
+        return {
+            createHTML: (s) => s,
+            createScript: (s) => s,
+            createScriptURL: (s) => s
+        };
+    })();
+
     const Notify = {
         show(type, message, title = '') {
+            if (window !== window.top) return;
             const notification = document.createElement('div');
             notification.className = `esv-notification ${type}`;
             notification.style.cssText = `
@@ -61,14 +81,14 @@
                 warning: '⚠'
             }[type] || 'ℹ';
 
-            notification.innerHTML = `
+            notification.innerHTML = ttPolicy.createHTML(`
                 <span style="margin-right: 12px; font-size: 18px; flex-shrink: 0;">${icon}</span>
                 <div style="flex: 1;">
                     ${title ? `<div style="font-weight: 600; margin: 0 0 4px 0; font-size: 14px; word-wrap: break-word; overflow-wrap: break-word;">${title}</div>` : ''}
                     <div style="margin: 0; font-size: 13px; opacity: 0.9; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">${message}</div>
                 </div>
                 <span class="esv-notification-close" style="margin-left: 12px; cursor: pointer; opacity: 0.7; font-size: 16px; line-height: 1; transition: opacity 0.2s;" title="Dismiss">&times;</span>
-            `;
+            `);
 
             document.body.appendChild(notification);
 
@@ -130,6 +150,8 @@
     const getDisconnectKey = (id) => `${GM_PREFIX}disconnect_${id}`;
     const getSourceListKey = (id) => `${GM_PREFIX}sources_${id}`;
     const getRoleNotificationKey = (id) => `${GM_PREFIX}role_notification_${id}`;
+    const getPlaylistKey = (id) => `${GM_PREFIX}playlist_${id}`;
+    const getPlaylistIndexKey = (id) => `${GM_PREFIX}playlist_index_${id}`;
 
     // Default configuration
     const DEFAULT_CONFIG = {
@@ -155,6 +177,7 @@
     let configPanel = null;
     let activeListeners = [];
     let config = null;
+    let collapseTimeout = null;
 
     // --- Lazyload Mute Control ---
     let muteLazyloadActivated = false;
@@ -212,6 +235,7 @@
 
     // Lightweight, synchronous prime from window.name so navigation retains role/id even before async loadState finishes.
     function primeStateFromWindowName() {
+        if (window !== window.top) return;
         try {
             // Try window.name first
             let payloadStr = window.name;
@@ -479,7 +503,7 @@
             #stm-menu {
                 display: none;
                 position: absolute;
-                top: calc(100% + 8px);
+                top: calc(100% + 4px);
                 background: rgba(30, 30, 30, 0.95);
                 backdrop-filter: blur(16px);
                 border: 1px solid rgba(255, 255, 255, 0.1);
@@ -490,6 +514,15 @@
                 font-family: 'Inter', system-ui, sans-serif;
                 font-size: 13px;
                 z-index: 3;
+            }
+            #stm-menu::before {
+                content: '';
+                position: absolute;
+                top: -12px;
+                left: 0;
+                right: 0;
+                height: 12px;
+                background: transparent;
             }
             #stm-ui-container.stm-side-right #stm-menu { right: 0; }
             #stm-ui-container.stm-side-left #stm-menu { left: 0; }
@@ -520,33 +553,237 @@
                 border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             }
 
-            #stm-config-panel { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #1a1a1a; border: 1px solid #333; border-radius: 16px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); z-index: 2147483648; font-family: 'Inter', system-ui, sans-serif; color: #fff; min-width: 400px; }
-            #stm-config-panel h3 { margin: 0 0 20px 0; font-size: 20px; font-weight: 700; color: #fff; }
-            .stm-config-section { margin-bottom: 24px; padding: 16px; background: #252525; border-radius: 12px; border: 1px solid #333; }
-            .stm-config-section h4 { margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: #4CAF50; text-transform: uppercase; letter-spacing: 0.5px; }
-            .stm-config-row { display: flex; gap: 12px; margin-bottom: 12px; align-items: center; }
-            .stm-config-label { flex: 1; font-size: 14px; color: #bbb; }
-            .stm-config-input select { background: #333; color: #fff; border: 1px solid #444; border-radius: 6px; padding: 6px 10px; cursor: pointer; outline: none; }
+            #stm-config-panel { 
+                display: none; 
+                position: fixed; 
+                top: 50%; 
+                left: 50%; 
+                transform: translate(-50%, -50%); 
+                background: #1a1a1a; 
+                border: 1px solid #333; 
+                border-radius: 16px; 
+                padding: 24px; 
+                box-shadow: 0 20px 50px rgba(0,0,0,0.8); 
+                z-index: 2147483648; 
+                font-family: 'Inter', system-ui, sans-serif; 
+                color: #fff; 
+                width: 95%;
+                max-width: 500px;
+                max-height: 90vh;
+                overflow-y: auto;
+                box-sizing: border-box;
+            }
+            #stm-config-panel::-webkit-scrollbar { width: 8px; }
+            #stm-config-panel::-webkit-scrollbar-track { background: #1a1a1a; }
+            #stm-config-panel::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+            #stm-config-panel::-webkit-scrollbar-thumb:hover { background: #444; }
+
+            #stm-config-panel h3 { margin: 0; font-size: 20px; font-weight: 700; color: #fff; }
+            .stm-config-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+            #stm-config-close-x { cursor: pointer; font-size: 28px; color: #666; line-height: 1; transition: color 0.2s; }
+            #stm-config-close-x:hover { color: #fff; }
+
+            .stm-config-section { margin-bottom: 20px; padding: 16px; background: rgba(255, 255, 255, 0.03); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.05); transition: background 0.2s; }
+            .stm-config-section:hover { background: rgba(255, 255, 255, 0.05); }
+            .stm-config-section h4 { margin: 0 0 16px 0; font-size: 13px; font-weight: 600; color: #4CAF50; text-transform: uppercase; letter-spacing: 1px; }
+            
+            .stm-config-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; align-items: flex-start; }
+            .stm-config-row:last-child { margin-bottom: 0; }
+            .stm-config-label { flex: 1 1 140px; font-size: 14px; color: #bbb; font-weight: 500; padding-top: 8px; }
+            .stm-config-input { flex: 2 1 200px; display: flex; flex-wrap: wrap; gap: 16px; }
+            .stm-config-input label { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 13px; color: #eee; padding: 4px 0; transition: color 0.2s; }
+            .stm-config-input label:hover { color: #fff; }
+            
+            /* Custom Checkbox Styling */
+            .stm-config-input input[type="checkbox"] { 
+                appearance: none; 
+                -webkit-appearance: none; 
+                width: 20px; 
+                height: 20px; 
+                border: 2px solid #444; 
+                border-radius: 6px; 
+                background: #2a2a2a; 
+                cursor: pointer; 
+                position: relative; 
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); 
+                margin: 0; 
+                outline: none;
+                flex-shrink: 0;
+            }
+            .stm-config-input input[type="checkbox"]:hover { border-color: #666; background: #333; }
+            .stm-config-input input[type="checkbox"]:checked { background: #4CAF50; border-color: #4CAF50; }
+            .stm-config-input input[type="checkbox"]:checked::after { 
+                content: ''; 
+                position: absolute; 
+                left: 6px; 
+                top: 2px; 
+                width: 5px; 
+                height: 10px; 
+                border: solid white; 
+                border-width: 0 2px 2px 0; 
+                transform: rotate(45deg); 
+            }
+            .stm-config-input input[type="checkbox"]:focus-visible { box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.4); }
+            
+            .stm-config-input select { background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 8px; padding: 8px 12px; cursor: pointer; outline: none; width: 100%; max-width: 220px; font-size: 13px; transition: border-color 0.2s; }
             .stm-config-input select:focus { border-color: #4CAF50; }
-            .stm-config-buttons { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
-            .stm-config-btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; }
-            .stm-config-btn-save { background: #4CAF50; color: white; }
-            .stm-config-btn-save:hover { background: #45a049; transform: translateY(-1px); }
-            .stm-config-btn-cancel { background: #444; color: white; }
-            .stm-config-btn-cancel:hover { background: #555; }
-            .stm-config-btn-reset { background: #f44336; color: white; }
-            .stm-config-btn-reset:hover { background: #da190b; }
-            #stm-config-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 2147483647; }
+            
+            .stm-config-buttons { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; margin-top: 32px; }
+            .stm-config-btn { padding: 12px 20px; border: none; border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s; flex: 1 1 auto; min-width: 100px; text-align: center; }
+            .stm-config-btn-save { background: #4CAF50; color: white; box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2); }
+            .stm-config-btn-save:hover { background: #45a049; transform: translateY(-1px); box-shadow: 0 6px 16px rgba(76, 175, 80, 0.3); }
+            .stm-config-btn-cancel { background: #333; color: #ccc; }
+            .stm-config-btn-cancel:hover { background: #444; color: #fff; }
+            .stm-config-btn-reset { background: rgba(244, 67, 54, 0.1); color: #f44336; border: 1px solid rgba(244, 67, 54, 0.2); }
+            .stm-config-btn-reset:hover { background: #f44336; color: white; }
+            #stm-config-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 2147483647; }
+
+            /* Playlist Styles */
+            #stm-playlist-panel {
+                display: none;
+                position: absolute;
+                top: calc(100% + 4px);
+                background: rgba(30, 30, 30, 0.95);
+                backdrop-filter: blur(16px);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 12px;
+                width: auto;
+                min-width: 240px;
+                max-width: min(400px, 85vw);
+                max-height: 500px;
+                overflow-y: auto;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+                font-family: 'Inter', system-ui, sans-serif;
+                z-index: 2;
+                padding: 4px 0;
+            }
+            .stm-side-right #stm-playlist-panel { right: 0; }
+            .stm-side-left #stm-playlist-panel { left: 0; }
+
+            .stm-playlist-item {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 10px 16px;
+                color: #eee;
+                cursor: pointer;
+                transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                font-size: 13px;
+                line-height: 1.4;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                position: relative;
+                overflow: hidden;
+            }
+            .stm-playlist-item:hover {
+                background: rgba(255, 255, 255, 0.1);
+                color: #fff;
+                padding-left: 20px;
+            }
+            .stm-playlist-item.active {
+                background: rgba(0, 123, 255, 0.15);
+                color: #fff;
+                border-left: 4px solid #007bff;
+            }
+            .stm-playlist-item.playing {
+                background: rgba(40, 167, 69, 0.15);
+                color: #fff;
+                border-left: 4px solid #28a745;
+            }
+            .stm-playlist-item-title {
+                flex: 1;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                font-weight: 500;
+                font-size: 13px;
+            }
+            .stm-playlist-item-play-icon {
+                width: 12px;
+                height: 12px;
+                fill: currentColor;
+                opacity: 0;
+                transition: opacity 0.2s;
+            }
+            .stm-playlist-item:hover .stm-playlist-item-play-icon,
+            .stm-playlist-item.playing .stm-playlist-item-play-icon {
+                opacity: 1;
+            }
+            .stm-playlist-item-remove {
+                opacity: 0;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-size: 16px;
+                transition: all 0.2s;
+                color: #888;
+            }
+            .stm-playlist-item:hover .stm-playlist-item-remove {
+                opacity: 0.6;
+            }
+            .stm-playlist-item-remove:hover {
+                opacity: 1 !important;
+                background: rgba(255, 68, 68, 0.2);
+                color: #ff4444;
+            }
+
+            #stm-mini-playlist {
+                display: none;
+                align-items: center;
+                gap: 4px;
+                margin: 0 4px;
+            }
+            #stm-ui-container:not(.stm-collapsed) #stm-mini-playlist { display: flex; }
+            .stm-mini-btn {
+                width: 24px;
+                height: 24px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 4px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: all 0.2s;
+                color: #fff;
+                font-size: 12px;
+            }
+            .stm-mini-btn:hover { background: rgba(255, 255, 255, 0.2); }
+            .stm-mini-btn svg { width: 14px; height: 14px; fill: currentColor; }
+
+            #stm-status-dot.stm-role-p { background: linear-gradient(135deg, #6f42c1, #5a32a3); box-shadow: 0 2px 10px rgba(111, 66, 193, 0.3); }
+
+            .stm-playlist-action-btn {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
+                padding: 6px;
+                color: #eee;
+                font-size: 12px;
+                font-family: inherit;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .stm-playlist-action-btn:hover {
+                background: rgba(255, 255, 255, 0.15);
+                color: white;
+            }
         `);
     }
 
     function createConfigPanel() {
+        if (window !== window.top) return;
         const overlay = document.createElement('div');
         overlay.id = 'stm-config-overlay';
         const panel = document.createElement('div');
         panel.id = 'stm-config-panel';
-        panel.innerHTML = `
-            <h3>Preference</h3>
+        panel.innerHTML = ttPolicy.createHTML(`
+            <div class="stm-config-header">
+                <h3>Preference</h3>
+                <span id="stm-config-close-x">&times;</span>
+            </div>
             <div class="stm-config-section">
                 <h4>Create Source Tab</h4>
                 <div class="stm-config-row">
@@ -562,9 +799,9 @@
                 <div class="stm-config-row">
                     <div class="stm-config-label">Modifiers:</div>
                     <div class="stm-config-input">
-                        <label for="stm-source-ctrl"><input type="checkbox" id="stm-source-ctrl"> Ctrl</label>
-                        <label for="stm-source-alt"><input type="checkbox" id="stm-source-alt"> Alt</label>
-                        <label for="stm-source-shift"><input type="checkbox" id="stm-source-shift"> Shift</label>
+                        <label><input type="checkbox" id="stm-source-ctrl"> Ctrl</label>
+                        <label><input type="checkbox" id="stm-source-alt"> Alt</label>
+                        <label><input type="checkbox" id="stm-source-shift"> Shift</label>
                     </div>
                 </div>
             </div>
@@ -583,9 +820,9 @@
                 <div class="stm-config-row">
                     <div class="stm-config-label">Modifiers:</div>
                     <div class="stm-config-input">
-                        <label for="stm-target-ctrl"><input type="checkbox" id="stm-target-ctrl"> Ctrl</label>
-                        <label for="stm-target-alt"><input type="checkbox" id="stm-target-alt"> Alt</label>
-                        <label for="stm-target-shift"><input type="checkbox" id="stm-target-shift"> Shift</label>
+                        <label><input type="checkbox" id="stm-target-ctrl"> Ctrl</label>
+                        <label><input type="checkbox" id="stm-target-alt"> Alt</label>
+                        <label><input type="checkbox" id="stm-target-shift"> Shift</label>
                     </div>
                 </div>
             </div>
@@ -594,19 +831,19 @@
                 <div class="stm-config-row">
                     <div class="stm-config-label">Source Role:</div>
                     <div class="stm-config-input">
-                        <label for="stm-notify-new-source"><input type="checkbox" id="stm-notify-new-source"> Notify when new source tab joins</label>
+                        <label><input type="checkbox" id="stm-notify-new-source"> Notify when new source tab joins</label>
                     </div>
                 </div>
                 <div class="stm-config-row">
                     <div class="stm-config-label">Target Role:</div>
                     <div class="stm-config-input">
-                        <label for="stm-notify-new-target"><input type="checkbox" id="stm-notify-new-target"> Notify when new target tab joins</label>
+                        <label><input type="checkbox" id="stm-notify-new-target"> Notify when new target tab joins</label>
                     </div>
                 </div>
                 <div class="stm-config-row">
                     <div class="stm-config-label">Revoke Role:</div>
                     <div class="stm-config-input">
-                        <label for="stm-notify-revoke"><input type="checkbox" id="stm-notify-revoke"> Notify when a tab revokes its role</label>
+                        <label><input type="checkbox" id="stm-notify-revoke"> Notify when a tab revokes its role</label>
                     </div>
                 </div>
             </div>
@@ -615,17 +852,19 @@
                 <button class="stm-config-btn stm-config-btn-cancel" id="stm-config-cancel">Cancel</button>
                 <button class="stm-config-btn stm-config-btn-save" id="stm-config-save">Save</button>
             </div>
-        `;
+        `);
         document.body.appendChild(overlay);
         document.body.appendChild(panel);
         overlay.addEventListener('click', hideConfigPanel);
         panel.querySelector('#stm-config-cancel').addEventListener('click', hideConfigPanel);
+        panel.querySelector('#stm-config-close-x').addEventListener('click', hideConfigPanel);
         panel.querySelector('#stm-config-save').addEventListener('click', saveConfigFromPanel);
         panel.querySelector('#stm-config-reset').addEventListener('click', resetConfigToDefault);
         return { overlay, panel };
     }
 
     function showConfigPanel() {
+        if (window !== window.top) return;
         if (!configPanel) { configPanel = createConfigPanel(); }
         document.getElementById('stm-source-button').value = config.sourceKey.button;
         document.getElementById('stm-source-ctrl').checked = config.sourceKey.ctrl;
@@ -683,14 +922,15 @@
         const sourcesPrefix = `${GM_PREFIX}sources_`;
         const mutePrefix = `${GM_PREFIX}mute_`;
         const lazyloadPrefix = `${GM_PREFIX}lazyload_`;
+        const playlistPrefix = `${GM_PREFIX}playlist_`;
 
         keys.forEach(k => {
             if (k.startsWith(urlPrefix)) ids.add(k.slice(urlPrefix.length));
             else if (k.startsWith(tsPrefix)) ids.add(k.slice(tsPrefix.length));
             else if (k.startsWith(disconnectPrefix)) ids.add(k.slice(disconnectPrefix.length));
             else if (k.startsWith(sourcesPrefix)) ids.add(k.slice(sourcesPrefix.length));
-            else if (k.startsWith(mutePrefix) || k.startsWith(lazyloadPrefix)) {
-                // Remove tab-specific mute and lazyload states
+            else if (k.startsWith(mutePrefix) || k.startsWith(lazyloadPrefix) || k.startsWith(playlistPrefix)) {
+                // Remove tab-specific mute, lazyload, and playlist states (including index)
                 GM_deleteValue(k);
             }
         });
@@ -779,7 +1019,9 @@
                 dot: document.createElement('div'),
                 menu: document.createElement('div'),
                 volume: document.createElement('div'),
-                grip: document.createElement('div')
+                grip: document.createElement('div'),
+                playlistPanel: document.createElement('div'),
+                miniPlaylist: document.createElement('div')
             };
             ui.container.id = 'stm-ui-container';
             ui.container.classList.add('stm-collapsed');
@@ -787,26 +1029,63 @@
             ui.menu.id = 'stm-menu';
             ui.volume.id = 'stm-volume-btn';
             ui.grip.id = 'stm-grip';
-            ui.grip.innerHTML = '<div class="stm-grip-dot"></div><div class="stm-grip-dot"></div><div class="stm-grip-dot"></div>';
+            ui.grip.innerHTML = ttPolicy.createHTML('<div class="stm-grip-dot"></div><div class="stm-grip-dot"></div><div class="stm-grip-dot"></div>');
 
-            ui.container.append(ui.grip, ui.volume, ui.dot, ui.menu);
+            ui.playlistPanel.id = 'stm-playlist-panel';
+            ui.miniPlaylist.id = 'stm-mini-playlist';
+            ui.miniPlaylist.innerHTML = ttPolicy.createHTML(`
+                <div class="stm-mini-btn" title="Previous" data-action="prev">
+                    <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                </div>
+                <div class="stm-mini-btn" title="Next" data-action="next">
+                    <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6zm9-12h2v12h-2z"/></svg>
+                </div>
+            `);
+
+            ui.container.append(ui.grip, ui.volume, ui.miniPlaylist, ui.dot, ui.menu, ui.playlistPanel);
             document.body.appendChild(ui.container);
 
             // Native Drag & Click (Role Assignment)
             ui.dot.setAttribute('draggable', 'true');
             ui.dot.addEventListener('click', (e) => { if (e.button === 0) toggleMenu(); });
+            ui.dot.addEventListener('dblclick', (e) => {
+                if (myRole === 'target') {
+                    setRole('playlist', myId);
+                } else if (myRole === 'playlist') {
+                    setRole('target', myId);
+                }
+            });
             ui.dot.addEventListener('dragstart', handleRoleDragStart);
+
+            ui.miniPlaylist.addEventListener('click', (e) => {
+                const btn = e.target.closest('.stm-mini-btn');
+                if (btn) {
+                    navigatePlaylist(btn.dataset.action);
+                }
+            });
 
             // UI Movement (Custom Dragging)
             ui.grip.addEventListener('mousedown', handleGripMouseDown);
 
             // Hover Expansion
-            ui.container.addEventListener('mouseenter', () => ui.container.classList.remove('stm-collapsed'));
-            ui.container.addEventListener('mouseleave', (e) => {
-                if (!ui.menu.style.display || ui.menu.style.display === 'none') {
-                    ui.container.classList.add('stm-collapsed');
+            ui.container.addEventListener('mouseenter', () => {
+                if (collapseTimeout) {
+                    clearTimeout(collapseTimeout);
+                    collapseTimeout = null;
                 }
-                handleContainerMouseLeave(e);
+                ui.container.classList.remove('stm-collapsed');
+                // Playlist panel is now toggled via click, not hover
+            });
+            ui.container.addEventListener('mouseleave', (e) => {
+                if (collapseTimeout) clearTimeout(collapseTimeout);
+                collapseTimeout = setTimeout(() => {
+                    if ((!ui.menu.style.display || ui.menu.style.display === 'none') &&
+                        (!ui.playlistPanel.style.display || ui.playlistPanel.style.display === 'none')) {
+                        ui.container.classList.add('stm-collapsed');
+                    }
+                    handleContainerMouseLeave(e);
+                    collapseTimeout = null;
+                }, 400); // 400ms buffer to prevent "slippy" collapse
             });
 
             // Link Drop Support
@@ -849,12 +1128,27 @@
             }
         }
 
+        // Re-inject if missing (aggressive self-healing)
+        if (myRole !== 'idle' && !isFullscreen && document.body && !ui.container.isConnected) {
+            document.body.appendChild(ui.container);
+        }
+
+        ui.dot.classList.remove('stm-role-p');
+        ui.container.classList.remove('stm-role-playlist');
+        ui.miniPlaylist.style.display = 'none';
+
         if (myRole === 'source') {
             ui.dot.textContent = 'S';
             ui.dot.style.display = 'flex';
         } else if (myRole === 'target') {
             ui.dot.textContent = 'T';
             ui.dot.style.display = 'flex';
+        } else if (myRole === 'playlist') {
+            ui.dot.textContent = 'P';
+            ui.dot.style.display = 'flex';
+            ui.dot.classList.add('stm-role-p');
+            ui.container.classList.add('stm-role-playlist');
+            ui.miniPlaylist.style.display = 'flex';
         } else {
             // This block is mostly for safety if the container display logic changes.
             ui.dot.style.display = 'none';
@@ -882,7 +1176,7 @@
         }
 
         if (myRole !== 'idle' || (myRole === 'idle' && GM_getValue(KEY_LATEST_SOURCE, null))) {
-            ui.menu.innerHTML = `
+            ui.menu.innerHTML = ttPolicy.createHTML(`
                 <div role="menu" aria-label="Split View Menu">
                     ${contextMenuItems.map(item =>
                 `<button role="menuitem" tabindex="0" data-action="${item.action}" class="stm-menu-item">
@@ -890,7 +1184,7 @@
                         </button>`
             ).join('')}
                 </div>
-            `;
+            `);
         }
     }
 
@@ -898,14 +1192,31 @@
         if (ui && ui.menu) {
             const isVisible = ui.menu.style.display === 'block';
             ui.menu.style.display = isVisible ? 'none' : 'block';
+
+            // Also toggle playlist if in playlist role
+            if (myRole === 'playlist' && ui.playlistPanel) {
+                const showing = !isVisible;
+                ui.playlistPanel.style.display = showing ? 'block' : 'none';
+                if (showing) {
+                    updatePlaylistUI();
+                    // Position playlist below menu. 
+                    // Since menu is 140px wide and has 2 items, it's roughly 85px high.
+                    setTimeout(() => {
+                        const menuHeight = ui.menu.offsetHeight || 85;
+                        ui.playlistPanel.style.top = `calc(100% + ${menuHeight + 6}px)`;
+                    }, 0);
+                }
+            }
+
             if (!isVisible) {
                 ui.container.classList.remove('stm-collapsed');
             }
         }
     }
     function hideMenu() {
-        if (ui && ui.menu) {
-            ui.menu.style.display = 'none';
+        if (ui) {
+            if (ui.menu) ui.menu.style.display = 'none';
+            if (ui.playlistPanel) ui.playlistPanel.style.display = 'none';
             ui.container.classList.add('stm-collapsed');
         }
     }
@@ -913,7 +1224,7 @@
         if (!ui || !ui.container) return;
         const toEl = e.relatedTarget;
         if (!toEl || !ui.container.contains(toEl)) {
-            if (ui.menu.style.display !== 'block') {
+            if (ui.menu.style.display !== 'block' && ui.playlistPanel.style.display !== 'block') {
                 hideMenu();
             }
         }
@@ -1129,12 +1440,218 @@
                 const volIcon = myIsMuted
                     ? `<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`
                     : `<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>`;
-                ui.volume.innerHTML = volIcon;
+                ui.volume.innerHTML = ttPolicy.createHTML(volIcon);
                 ui.volume.title = myIsMuted ? 'Click to unmute' : 'Click to mute';
             }
         } else {
             ui.volume.style.display = 'none';
         }
+    }
+
+    // --- Playlist Management ---
+    function addToPlaylist(url, title = null) {
+        if (!myId) return;
+        const key = getPlaylistKey(myId);
+        const playlist = GM_getValue(key, []);
+
+        // Avoid duplicates
+        if (playlist.find(item => item.url === url)) {
+            Notify.info('Link already in playlist');
+            return;
+        }
+
+        const newItem = {
+            url: url,
+            title: title || url.split('/').pop() || url,
+            timestamp: Date.now()
+        };
+
+        playlist.push(newItem);
+        GM_setValue(key, playlist);
+        Notify.success('Added to playlist');
+        updatePlaylistUI();
+        pulseDot();
+    }
+
+    function removeFromPlaylist(index) {
+        if (!myId) return;
+        const key = getPlaylistKey(myId);
+        const indexKey = getPlaylistIndexKey(myId);
+        const playlist = GM_getValue(key, []);
+        let currentIndex = GM_getValue(indexKey, -1);
+
+        playlist.splice(index, 1);
+        GM_setValue(key, playlist);
+
+        // Adjust current index if needed
+        if (currentIndex === index) {
+            GM_setValue(indexKey, -1);
+        } else if (currentIndex > index) {
+            GM_setValue(indexKey, currentIndex - 1);
+        }
+
+        updatePlaylistUI();
+    }
+
+    function navigatePlaylist(direction) {
+        if (!myId) return;
+        const key = getPlaylistKey(myId);
+        const indexKey = getPlaylistIndexKey(myId);
+        const playlist = GM_getValue(key, []);
+        if (playlist.length === 0) return;
+
+        let currentIndex = GM_getValue(indexKey, -1);
+
+        // If no index saved, try to find it by current URL
+        if (currentIndex === -1) {
+            const currentUrl = window.location.href;
+            currentIndex = playlist.findIndex(item => item.url === currentUrl);
+        }
+
+        let nextIndex;
+        if (direction === 'next') {
+            nextIndex = (currentIndex + 1) % playlist.length;
+        } else {
+            nextIndex = (currentIndex - 1 + playlist.length) % playlist.length;
+        }
+
+        GM_setValue(indexKey, nextIndex);
+        window.location.href = playlist[nextIndex].url;
+    }
+
+    function sharePlaylist() {
+        if (!myId) return;
+        const playlist = GM_getValue(getPlaylistKey(myId), []);
+        if (playlist.length === 0) {
+            Notify.warning('Playlist is empty');
+            return;
+        }
+
+        try {
+            const minified = playlist.map(p => ({ u: p.url, t: p.title }));
+            const json = JSON.stringify(minified);
+            const encoded = btoa(encodeURIComponent(json));
+
+            const url = new URL(window.location.href);
+            url.searchParams.set('stm_playlist', encoded);
+
+            navigator.clipboard.writeText(url.toString()).then(() => {
+                Notify.success('Playlist URL copied to clipboard');
+            }).catch(err => {
+                console.error(err);
+                Notify.error('Failed to copy to clipboard');
+            });
+        } catch (e) {
+            console.error(e);
+            Notify.error('Failed to generate share link');
+        }
+    }
+
+    function checkPlaylistParam() {
+        if (window !== window.top) return;
+        const params = new URLSearchParams(window.location.search);
+        const encoded = params.get('stm_playlist');
+        if (encoded) {
+            try {
+                const json = decodeURIComponent(atob(encoded));
+                const minified = JSON.parse(json);
+                if (Array.isArray(minified)) {
+                    const playlist = minified.map(p => ({
+                        url: p.u || p.url,
+                        title: p.t || p.title,
+                        timestamp: Date.now()
+                    }));
+
+                    const newId = generateId();
+                    GM_setValue(getPlaylistKey(newId), playlist);
+                    setRole('playlist', newId);
+
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('stm_playlist');
+                    window.history.replaceState({}, '', url);
+
+                    Notify.success(`Imported ${playlist.length} items to playlist`);
+                }
+            } catch (e) {
+                console.error('Split View: Failed to parse playlist', e);
+            }
+        }
+    }
+
+    function updatePlaylistUI() {
+        if (!ui || !ui.playlistPanel || myRole !== 'playlist') return;
+
+        const playlist = GM_getValue(getPlaylistKey(myId), []);
+        const indexKey = getPlaylistIndexKey(myId);
+        const playingIndex = GM_getValue(indexKey, -1);
+        const currentUrl = window.location.href;
+
+        let content = `
+            <div style="display: flex; gap: 8px; padding: 8px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 4px;">
+                <button id="stm-playlist-share-btn" class="stm-playlist-action-btn" title="Copy Playlist URL">
+                    <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: currentColor;"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
+                    Share
+                </button>
+                <button id="stm-playlist-clear-btn" class="stm-playlist-action-btn" title="Clear Playlist">
+                    <svg viewBox="0 0 24 24" style="width: 14px; height: 14px; fill: currentColor;"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    Clear
+                </button>
+            </div>
+        `;
+
+        if (playlist.length === 0) {
+            content += '<div style="padding: 12px; text-align: center; color: #888; font-size: 12px;">Playlist is empty</div>';
+        } else {
+            content += playlist.map((item, index) => {
+                const isPlaying = index === playingIndex;
+                const isActive = item.url === currentUrl;
+
+                let siteName = '';
+                try {
+                    const urlObj = new URL(item.url);
+                    siteName = urlObj.hostname.replace('www.', '');
+                } catch (e) {
+                    siteName = 'Link';
+                }
+
+                const displayTitle = `${siteName} | ${item.title}`;
+
+                return `
+                    <div class="stm-playlist-item ${isPlaying ? 'playing' : ''} ${isActive ? 'active' : ''}" data-index="${index}">
+                        <div class="stm-playlist-item-play-icon">
+                            <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                        </div>
+                        <div class="stm-playlist-item-title" title="${item.url}">${displayTitle}</div>
+                        <div class="stm-playlist-item-remove" data-action="remove" data-index="${index}">&times;</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        ui.playlistPanel.innerHTML = ttPolicy.createHTML(content);
+
+        const shareBtn = ui.playlistPanel.querySelector('#stm-playlist-share-btn');
+        if (shareBtn) shareBtn.addEventListener('click', sharePlaylist);
+
+        const clearBtn = ui.playlistPanel.querySelector('#stm-playlist-clear-btn');
+        if (clearBtn) clearBtn.addEventListener('click', () => {
+            if (confirm('Clear playlist?')) {
+                GM_setValue(getPlaylistKey(myId), []);
+                updatePlaylistUI();
+            }
+        });
+
+        ui.playlistPanel.querySelectorAll('.stm-playlist-item').forEach(el => {
+            el.addEventListener('click', (e) => {
+                const index = parseInt(el.dataset.index);
+                if (e.target.dataset.action === 'remove') {
+                    removeFromPlaylist(index);
+                } else {
+                    GM_setValue(indexKey, index);
+                    window.location.href = playlist[index].url;
+                }
+            });
+        });
     }
 
     // --- Media Management (Volume/Mute) ---
@@ -1460,6 +1977,11 @@
             saveState('target', id);
             // Broadcast notification when target joins
             broadcastRoleNotification(id, 'target', myInstanceId);
+        } else if (role === 'playlist') {
+            if (!id) { Notify.error('Cannot become Playlist without a Source ID.'); return; }
+            saveState('playlist', id);
+            // Broadcast notification when playlist joins
+            broadcastRoleNotification(id, 'playlist', myInstanceId);
         }
     }
     // Disconnects just this tab, leaving the other tab in its role.
@@ -1515,6 +2037,8 @@
         if (myRole !== 'idle' && myId) {
             GM_deleteValue(getMuteStateKey(myId, myRole));
             GM_deleteValue(getLazyloadKey(myId, myRole));
+            GM_deleteValue(getPlaylistKey(myId));
+            GM_deleteValue(getPlaylistIndexKey(myId));
         }
         saveState('idle', null, 0, null);
     }
@@ -1544,11 +2068,16 @@
 
         const url = extractUrlFromDataTransfer(e.dataTransfer);
         if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-            // ALWAYS navigate the current tab, regardless of role (S or T).
-            // This maintains the existing user expectation of local navigation.
             e.preventDefault();
             e.stopPropagation();
-            window.location.href = url;
+
+            if (myRole === 'playlist') {
+                addToPlaylist(url);
+            } else {
+                // ALWAYS navigate the current tab, regardless of role (S or T).
+                // This maintains the existing user expectation of local navigation.
+                window.location.href = url;
+            }
         }
     }
 
@@ -1600,8 +2129,13 @@
 
                 e.preventDefault();
                 if (data.role === 'source') {
-                    setRole('target', data.sourceId);
-                } else if (data.role === 'target') {
+                    // If we are already a playlist, stay a playlist but join the new source
+                    if (myRole === 'playlist') {
+                        setRole('playlist', data.sourceId);
+                    } else {
+                        setRole('target', data.sourceId);
+                    }
+                } else if (data.role === 'target' || data.role === 'playlist') {
                     setRole('source', data.sourceId, true);
                 }
             } catch (err) { /* ignore */ }
@@ -1710,13 +2244,65 @@
                 saveState('target', myId, serverTs);
                 window.location.href = GM_getValue(getTargetUrlKey(myId));
             }
+        } else if (myRole === 'playlist') {
+            const urlListener = GM_addValueChangeListener(getTimestampKey(myId), (k, o, n) => {
+                if (n > myLastTs) {
+                    const url = GM_getValue(getTargetUrlKey(myId));
+                    if (url) {
+                        addToPlaylist(url);
+                        saveState('playlist', myId, n);
+                    }
+                }
+            });
+            activeListeners.push(urlListener);
+
+            // Initial Check for missed updates
+            const serverTs = GM_getValue(getTimestampKey(myId), 0);
+            if (serverTs > myLastTs) {
+                const url = GM_getValue(getTargetUrlKey(myId));
+                if (url) {
+                    addToPlaylist(url);
+                    saveState('playlist', myId, serverTs);
+                }
+            }
         }
+    }
+
+    // --- SPA & YouTube Navigation Support ---
+    function waitForShortsPlayer() {
+        const checkPlayer = () => {
+            // Target specific player elements that indicate a video has loaded in an SPA
+            const player = document.querySelector('#shorts-player') ||
+                document.querySelector('video[is-shorts]') ||
+                document.querySelector('ytd-shorts') ||
+                document.querySelector('#movie_player video'); // Regular YouTube player
+
+            if (player && !player.dataset.esvRestarted) {
+                player.dataset.esvRestarted = 'true';
+                if (stateLoaded && myRole !== 'idle') {
+                    console.log('[Extension] Player detected – refreshing UI');
+                    updateUI();
+                }
+            }
+        };
+
+        // Watch for player injection in the app root
+        const appRoot = document.querySelector('ytd-app') || document.body;
+        const observer = new MutationObserver(checkPlayer);
+        observer.observe(appRoot, { childList: true, subtree: true });
+
+        // Fallback interval
+        checkPlayer();
+        setInterval(checkPlayer, 1000);
     }
 
     function initialize() {
         loadConfig();
         loadMuteLazyloadState(); // Load persistent lazyload state
-        injectStyles();
+        if (window === window.top) {
+            injectStyles();
+            checkPlaylistParam();
+        }
         primeStateFromWindowName();
 
         // Listen for configuration changes to update notification settings
@@ -1751,27 +2337,41 @@
             mediaManager.init();
 
             // --- Menu Configuration ---
-            const menuCommands = [
-                { name: "Create Source", func: () => setRole('source') },
-                { name: "Reset Roles", func: resetAllRoles },
-                { name: "Preference", func: showConfigPanel }
-            ];
-            menuCommands.forEach(cmd => GM_registerMenuCommand(cmd.name, cmd.func));
+            if (window === window.top) {
+                const menuCommands = [
+                    { name: "Create Source", func: () => setRole('source') },
+                    { name: "Reset Roles", func: resetAllRoles },
+                    { name: "Preference", func: showConfigPanel }
+                ];
+                menuCommands.forEach(cmd => GM_registerMenuCommand(cmd.name, cmd.func));
 
-            window.addEventListener('mousedown', (e) => {
-                if (matchesKeyConfig(e, config.sourceKey)) {
-                    e.preventDefault(); e.stopPropagation();
-                    setRole('source');
-                } else if (matchesKeyConfig(e, config.targetKey)) {
-                    e.preventDefault(); e.stopPropagation();
-                    const l = GM_getValue(KEY_LATEST_SOURCE, null);
-                    if (l) setRole('target', l.sourceId);
-                    else Notify.warning('No Source tab found.');
-                }
-            }, true);
+                window.addEventListener('mousedown', (e) => {
+                    if (matchesKeyConfig(e, config.sourceKey)) {
+                        e.preventDefault(); e.stopPropagation();
+                        setRole('source');
+                    } else if (matchesKeyConfig(e, config.targetKey)) {
+                        e.preventDefault(); e.stopPropagation();
+                        const l = GM_getValue(KEY_LATEST_SOURCE, null);
+                        if (l) setRole('target', l.sourceId);
+                        else Notify.warning('No Source tab found.');
+                    }
+                }, true);
+            }
 
             // Listen for fullscreen changes to hide/show UI
             document.addEventListener('fullscreenchange', () => updateUI());
+
+            // --- SPA Support Listeners ---
+            document.addEventListener('yt-navigate-finish', () => {
+                setTimeout(waitForShortsPlayer, 300);
+                if (stateLoaded && myRole !== 'idle') updateUI();
+            });
+
+            window.addEventListener('popstate', () => {
+                if (stateLoaded && myRole !== 'idle') updateUI();
+            });
+
+            waitForShortsPlayer();
         });
     }
 
