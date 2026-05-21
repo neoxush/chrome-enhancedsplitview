@@ -18,35 +18,44 @@ Browse and view content side by side with ease. Click links in one tab and see t
 
 ## 📝 Version History
 
-### v1.0.8 (Latest)
+### v1.1.0 (Latest)
+- **Low-Latency Sync**: Faster communication between tabs using `BroadcastChannel`.
+- **Keyboard Shortcuts**: New power-user shortcuts for muting, playlist navigation, and UI control.
+- **Premium Design System**: Overhauled UI with modern design tokens, glassmorphism, and smooth animations.
+- **Notification Queueing**: Notifications now queue and stack (max 3), with pause-on-hover functionality.
+- **Multi-Source Support**: Better management for multiple source tab environments.
+- **Enhanced Configuration**: Customize themes and keyboard shortcut preferences.
+
+### v1.0.8
 - **New Playlist Feature**: Double-click target tab to enter playlist mode for managing multiple links
 - **Playlist Sharing**: Share your playlist with others or export/import playlists for later use
-- **Enhanced Media Controls**: Improved lazyload mute system with persistent state across sessions
-- **Better UI**: Added mini playlist controls with previous/next navigation
-- **Improved Notifications**: Modern notification system with better responsive design and text wrapping
-- **Enhanced State Management**: More robust tab state persistence across navigation
-- **Fullscreen Support**: UI automatically hides/shows based on fullscreen state
-- **SPA Improvements**: Better support for single-page applications like YouTube
 
 [View all versions](https://github.com/neoxush/chrome-enhancedsplitview/commits/main)
 
 ## 🎯 Key Features
 
-- **Simple Controls**: Intuitive S (Source) and T (Target) indicators
-- **Playlist Mode**: Double-click target tabs to manage multiple links with playlist controls
-- **Playlist Sharing**: Export and share playlists with others or import playlists for later use
-- **Flexible Layouts**: Works with Chrome's Split View, separate windows, or multiple monitors
-- **Media Controls**: Mute/unmute with `Ctrl+Alt+M` and persistent mute state
-- **Smart UI**: Auto-hides in fullscreen, responsive design with modern notifications
-- **Persistent**: Maintains state across page refreshes and navigation
-- **Customizable**: Change mouse shortcuts via Tampermonkey menu
-- **SPA Support**: Enhanced compatibility with single-page applications
+- **Simple Controls**: Intuitive S (Source) and T (Target) indicators with premium glassmorphism.
+- **Low-Latency Sync**: Real-time cross-tab signaling using `BroadcastChannel`.
+- **Keyboard Power User Shortcuts**: Quick access to mute, navigation, and UI dismissal.
+- **Playlist Mode**: Double-click target tabs to manage multiple links with playlist controls.
+- **Media Controls**: Mute/unmute with `M` key and persistent mute state across sessions.
+- **Smart UI**: Auto-hides in fullscreen, responsive design with queued modern notifications.
+- **Persistent**: Maintains state across page refreshes and navigation.
+- **Customizable**: Change mouse shortcuts, themes, and keyboard bindings via the Preference panel.
+
+## ⌨️ Keyboard Shortcuts
+
+- `M`: Toggle Mute
+- `Esc`: Close UI / Panels
+- `Arrow Right / Left`: Next / Previous in Playlist
+- `Alt + Shift + R`: Revoke current role
 
 ## ⚙️ Configuration
 
-Customize in Tampermonkey → Configure Keys:
-- **Source**: `CTRL` + `Middle Mouse` (default)
-- **Target**: `ALT` + `Middle Mouse` (default)
+Customize in the new **Preference** panel (click the status dot) or via Tampermonkey:
+- **Source/Target Keys**: Configure mouse button and modifiers.
+- **Theme**: Auto / Light / Dark support.
+- **Shortcuts**: Enable or disable specific keyboard bindings.
 
 ---
 
