@@ -18,7 +18,13 @@ Browse and view content side by side with ease. Click links in one tab and see t
 
 ## 📝 Version History
 
-### v1.1.0 (Latest)
+### v1.2.0 (Latest)
+- **AI Chat Site Compatibility**: Drag-to-pair now works reliably on ChatGPT, Gemini, Claude, Perplexity, and similar AI chat apps. Pages with global file-upload overlays no longer freeze on pair drop — fixed via strict event isolation (`dragenter`/`dragover`/`drop` stop propagation on our role-request payload).
+- **Performance**: Removed always-on global `mousemove` listener (now lazy-attached only during in-flight drags). YouTube Shorts polling now stops once the player is detected (saves perpetual 2s ticks).
+- **Code Health**: Centralized role-drag MIME detection and event isolation into helper functions — single source of truth, easier to extend.
+- **New Debug Toggle**: Tampermonkey menu entry "ESV debug logs: ON/OFF (toggle)" lets you enable verbose `[ESV]` logging without editing the script.
+
+### v1.1.0
 - **Low-Latency Sync**: Faster communication between tabs using `BroadcastChannel`.
 - **Keyboard Shortcuts**: New power-user shortcuts for muting, playlist navigation, and UI control.
 - **Premium Design System**: Overhauled UI with modern design tokens, glassmorphism, and smooth animations.
