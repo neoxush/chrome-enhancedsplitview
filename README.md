@@ -18,7 +18,10 @@ Browse and view content side by side with ease. Click links in one tab and see t
 
 ## 📝 Version History
 
-### v1.2.0 (Latest)
+### v1.2.1 (Latest)
+- **Bugfix — Trusted Types compliance**: `updateVolumeButton` sleep-mode icon now routes through the script's Trusted Types policy (`ttPolicy.createHTML`), matching every other `innerHTML` write in the script. Without this, sites that enforce Trusted Types via CSP (e.g. `play.google.com`) blocked the icon assignment, causing the volume/mute-control button to silently fail to render and producing inconsistent pair-drag / source-transmission behavior on those pages.
+
+### v1.2.0
 - **AI Chat Site Compatibility**: Drag-to-pair now works reliably on ChatGPT, Gemini, Claude, Perplexity, and similar AI chat apps. Pages with global file-upload overlays no longer freeze on pair drop — fixed via strict event isolation (`dragenter`/`dragover`/`drop` stop propagation on our role-request payload).
 - **Performance**: Removed always-on global `mousemove` listener (now lazy-attached only during in-flight drags). YouTube Shorts polling now stops once the player is detected (saves perpetual 2s ticks).
 - **Code Health**: Centralized role-drag MIME detection and event isolation into helper functions — single source of truth, easier to extend.
