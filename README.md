@@ -18,7 +18,20 @@ Browse and view content side by side with ease. Click links in one tab and see t
 
 ## 📝 Version History
 
-### v1.2.1 (Latest)
+### v1.3.2 (Latest)
+- **Perf — role-churn & data transmission**: `saveState()` no longer rewires GM value-change listeners when role/id are unchanged (kills wasted churn on mute toggles and target-received navigations). `KEY_UI_POS` write skipped when position is unchanged. Playlist render-skip hash changed from `O(N)` `JSON.stringify(playlist.map(i=>i.url))` to an `O(1)` version counter — matters on 100+ item playlists.
+
+### v1.3.1
+- **Bugfix — playlist panel leak**: Playlist panel could persist into non-playlist roles after cycling `playlist → revoke → target`. Now defensively hidden in `updateUI()` for any non-playlist role, with the same guard added to `toggleMenu()`.
+
+### v1.3.0
+- **Compact floating UI**: Dot 32→26, volume 28→24, mini prev/next 26→22, menu 160→124 with tighter row padding (10→5), playlist panel 280→240 with tighter rows and empty state.
+- **Accessibility**: Keyboard + ARIA on status dot (Enter/Space toggles menu), volume button (`aria-pressed` reflects mute), mini-playlist buttons, playlist rows (Enter/Space to open, Delete/Backspace to remove), source picker items. Config panel is now a proper `role="dialog"` with `aria-modal`, `aria-labelledby`, focus trap, and focus restore on close.
+- **Perf — general**: `MutationObserver` uses `querySelectorAll` instead of serializing `outerHTML` (major win on React/Vue SPAs). Grip drag caches heights at `mousedown` — no layout thrash per mousemove. Notification `_restack` batched via `requestAnimationFrame`. `mediaManager` tick self-schedules (no overlap). Global capture listeners marked `{ passive: true }` where safe. Config-panel field refs cached once (killed 15+ `getElementById` per open/save).
+- **Reduced motion**: `@media (prefers-reduced-motion: reduce)` now applies globally via `*` selectors.
+- **Design tokens**: `backdrop-filter` consolidated into 4 CSS custom properties.
+
+### v1.2.1
 - **Bugfix — Trusted Types compliance**: `updateVolumeButton` sleep-mode icon now routes through the script's Trusted Types policy (`ttPolicy.createHTML`), matching every other `innerHTML` write in the script. Without this, sites that enforce Trusted Types via CSP (e.g. `play.google.com`) blocked the icon assignment, causing the volume/mute-control button to silently fail to render and producing inconsistent pair-drag / source-transmission behavior on those pages.
 
 ### v1.2.0
