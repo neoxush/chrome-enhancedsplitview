@@ -18,7 +18,12 @@ Browse and view content side by side with ease. Click links in one tab and see t
 
 ## 📝 Version History
 
-### v1.3.2 (Latest)
+### v1.3.3 (Latest)
+- **Color system — decouple role hues from status hues**: Source `#22c55e` → `#10b981` (emerald), Target `#3b82f6` → `#6366f1` (indigo), Playlist `#a855f7` → `#f43f5e` (rose). Info `#3b82f6` → `#0ea5e9` (sky). Save button, focus rings, and checkboxes no longer visually read as "Target"; Success toast no longer shares a hex with the Source dot.
+- **Accessibility**: `.stm-playlist-item.playing` now carries a `▶` glyph via `::before` so state is readable without color perception (WCAG SC 1.4.1).
+- **Design tokens**: Every role/status hue now exposes a matching `*-rgb` triplet token so translucent tints (glow shadows, `.active`/`.playing` backgrounds) reference the token instead of hardcoded `rgba()`. Palette is a single source of truth — future palette changes are a 6-line edit.
+
+### v1.3.2
 - **Perf — role-churn & data transmission**: `saveState()` no longer rewires GM value-change listeners when role/id are unchanged (kills wasted churn on mute toggles and target-received navigations). `KEY_UI_POS` write skipped when position is unchanged. Playlist render-skip hash changed from `O(N)` `JSON.stringify(playlist.map(i=>i.url))` to an `O(1)` version counter — matters on 100+ item playlists.
 
 ### v1.3.1
