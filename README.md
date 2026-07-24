@@ -18,7 +18,15 @@ Browse and view content side by side with ease. Click links in one tab and see t
 
 ## 📝 Version History
 
-### v1.3.3 (Latest)
+### v1.3.5 (Latest)
+- **Source tab: catches obfuscated-class pagination**: extends the v1.3.4 in-page navigation detection with two shape-based signals. Signal 6: URL pathname matches `/page/N/` or `/pg/N/` (WordPress, Ghost, Hugo, Jekyll, many CMSes). Signal 7: anchor sits in `<li>` inside `<ul>`/`<ol>` with ≥3 sibling `<li>` items each wrapping an `<a href>`, AND the anchor's own text is empty (CSS `::before` pseudo label) OR ≤3 non-alphabetic chars (bare number, chevron, arrow). Catches sites like 80lv where every class name is hash-obfuscated and page numbers are rendered via CSS pseudo-elements. Site nav bars, breadcrumbs, and content link lists remain unaffected (their anchor text is alphabetic words).
+- **Cleanup**: hoisted the pagination-query keys array to a module constant (was reallocated per click). Signal 6 deliberately excludes bare `/p/N/` because several blog engines use it for individual post IDs — including it would drop legitimate forwards.
+
+### v1.3.4
+- **Source tab: don't hijack in-page navigation**: pagination links, tab-strips, and `rel="next"/"prev"` anchors on a Source tab now navigate the Source tab itself instead of being forwarded to the Target tab. Detection is signal-driven and conservative — cross-origin links keep forwarding as before, no new UI. Catches WordPress `.page-numbers`, Bootstrap `.pagination`, `.pager`, `nav[aria-label*="page"]`, `role="tab"` in `role="tablist"`, `aria-label` reading like page nav ("Next", "Page 3", …), and same-path query-only changes with pagination keys (`page`, `p`, `offset`, …).
+- **Perf**: zero ongoing overhead — the new check runs only on left-click of an anchor (already the rare path) via one compiled `closest()` call, no observers, no per-node scanning. Playlist and player codepaths are untouched.
+
+### v1.3.3
 - **Color system — decouple role hues from status hues**: Source `#22c55e` → `#10b981` (emerald), Target `#3b82f6` → `#6366f1` (indigo), Playlist `#a855f7` → `#f43f5e` (rose). Info `#3b82f6` → `#0ea5e9` (sky). Save button, focus rings, and checkboxes no longer visually read as "Target"; Success toast no longer shares a hex with the Source dot.
 - **Accessibility**: `.stm-playlist-item.playing` now carries a `▶` glyph via `::before` so state is readable without color perception (WCAG SC 1.4.1).
 - **Design tokens**: Every role/status hue now exposes a matching `*-rgb` triplet token so translucent tints (glow shadows, `.active`/`.playing` backgrounds) reference the token instead of hardcoded `rgba()`. Palette is a single source of truth — future palette changes are a 6-line edit.
